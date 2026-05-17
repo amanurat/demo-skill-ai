@@ -1,0 +1,408 @@
+{
+  "artifact_id": "a3f7c2e1-84b0-4d9f-b6e3-2c51f0d8a749",
+  "from_agent": "banking-ba",
+  "to_agent": "banking-solution-architect",
+  "phase": "DISCOVERY",
+  "feature": "money-transfer",
+  "payload": {
+    "user_stories": [
+      {
+        "id": "US-001",
+        "title": "Initiate intra-bank money transfer (happy path)",
+        "as_a": "authenticated retail customer",
+        "i_want": "to transfer THB funds from my account to another account within the same bank",
+        "so_that": "the payee receives funds immediately and I get confirmation with a reference number",
+        "acceptance_criteria": [
+          "Given I am authenticated via OAuth2/JWT, my source account is active with sufficient balance, and the payee account is active, When I submit a transfer request with a valid amount (> 0 and <= per-transaction limit) and an Idempotency-Key header, Then the system debits my source account and credits the payee account atomically, returns HTTP 200 with transfer reference number and UTC timestamp, and the end-to-end latency (client submission to confirmation response) is p95 < 1 second",
+          "Given a successful transfer, When the system processes the request, Then an immutable audit record is appended containing: transfer_id, source_account_id, destination_account_id, amount, currency (THB), initiator_user_id, timestamp (UTC), channel (internet-banking), result (SUCCESS), correlation_id; and async notifications (email, SMS, push) are enqueued within 500ms of confirmation",
+          "Given I attach an optional memo of <= 200 characters, When the transfer succeeds, Then the memo is persisted on the transfer record and visible in transfer history",
+          "Given I submit a transfer with memo exceeding 200 characters, When the request is validated, Then the system rejects the request with HTTP 400 and error code MEMO_TOO_LONG before any debit occurs"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-002",
+        "title": "Reject transfer due to insufficient balance",
+        "as_a": "authenticated retail customer",
+        "i_want": "to receive a clear rejection when my account balance is below the requested transfer amount",
+        "so_that": "I understand why the transfer failed without any funds being moved",
+        "acceptance_criteria": [
+          "Given my source account available balance is less than the requested transfer amount (net of any holds), When I submit a transfer request, Then the system rejects the request with HTTP 422 and error code INSUFFICIENT_FUNDS, and no debit or credit occurs on any account",
+          "Given the rejection, Then an audit record is appended with result FAILED and reason INSUFFICIENT_FUNDS, including the requested amount and available balance at the time of rejection (balance value must be masked to last 2 digits in logs per PDPA minimization, full value stored in encrypted audit record only)",
+          "Given the rejection, When the customer views the response, Then the response body contains: error_code INSUFFICIENT_FUNDS, human-readable message in Thai and English, transfer_id (for support reference), and the Idempotency-Key is consumed and marked REJECTED so replay returns the same INSUFFICIENT_FUNDS response"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-003",
+        "title": "Prevent duplicate transfer via Idempotency-Key",
+        "as_a": "authenticated retail customer or the system retrying on network timeout",
+        "i_want": "to guarantee that resubmitting the same transfer request does not cause a double-debit",
+        "so_that": "network retries and accidental duplicate submissions are safe",
+        "acceptance_criteria": [
+          "Given I submit a transfer with Idempotency-Key K and the transfer succeeds, When I (or the client SDK) submit an identical request with the same Idempotency-Key K within 24 hours, Then the system returns HTTP 200 with the original transfer result (cached response), does not debit or credit any account a second time, and the response body includes idempotency_status: IDEMPOTENT_REPLAY",
+          "Given I submit a transfer with Idempotency-Key K and the transfer is rejected (e.g., INSUFFICIENT_FUNDS), When I replay with the same key within 24 hours, Then the system returns the same rejection response (HTTP 422, error code INSUFFICIENT_FUNDS) without re-executing the business logic",
+          "Given an Idempotency-Key K is older than 24 hours (TTL expired), When I submit with the same key, Then the system treats the request as a new transfer and processes it from scratch",
+          "Given I submit a transfer with Idempotency-Key K with payload A, and then submit with the same key K but a different payload (e.g., different amount), When the system detects the mismatch, Then it returns HTTP 409 with error code IDEMPOTENCY_KEY_CONFLICT and no funds are moved; an audit record is written noting the conflict attempt"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-004",
+        "title": "Enforce per-transaction transfer limit",
+        "as_a": "authenticated retail customer",
+        "i_want": "to be informed immediately if my requested transfer amount exceeds my per-transaction limit",
+        "so_that": "the bank's risk controls are enforced and I understand my allowed transaction ceiling",
+        "acceptance_criteria": [
+          "Given my per-transaction limit is configured at 100,000 THB (default) and I submit a transfer of 100,001 THB or more, When the system validates the request, Then the transfer is rejected with HTTP 422 and error code TRANSACTION_LIMIT_EXCEEDED before any debit occurs",
+          "Given a customer tier upgrade (e.g., Gold tier with a higher limit), When the bank ops team updates the per-transaction limit for that customer, Then subsequent transfers up to the new limit are accepted, and the limit value used at time of each request is recorded in the audit log",
+          "Given I submit a transfer of exactly 100,000 THB (equal to the default limit), When the system validates, Then the transfer is accepted and proceeds (boundary: equal to limit is permitted)",
+          "Given any per-transaction limit rejection, Then an audit record is written with result FAILED and reason TRANSACTION_LIMIT_EXCEEDED, including the attempted amount and the configured limit at time of request"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-005",
+        "title": "Enforce daily cumulative transfer limit",
+        "as_a": "authenticated retail customer",
+        "i_want": "to be informed when my daily cumulative transfer total would be exceeded by a new request",
+        "so_that": "the bank's daily risk controls are enforced and I can plan my transfers accordingly",
+        "acceptance_criteria": [
+          "Given my daily cumulative transfers for the current calendar day (UTC+7 Bangkok time) have reached 500,000 THB, When I submit any further transfer regardless of amount, Then the transfer is rejected with HTTP 422 and error code DAILY_LIMIT_EXCEEDED and no funds are moved",
+          "Given my cumulative total is 490,000 THB today and I submit a transfer of 20,000 THB (which would bring total to 510,000 THB exceeding the 500,000 THB limit), When the system validates, Then the transfer is rejected with DAILY_LIMIT_EXCEEDED before any debit; partial approval of 10,000 THB is not offered",
+          "Given the calendar day resets at midnight Bangkok time (UTC+7), When I submit a new transfer after midnight, Then the daily accumulator resets to zero and the full daily limit is available again",
+          "Given any daily limit rejection, Then an audit record is written with result FAILED, reason DAILY_LIMIT_EXCEEDED, including attempted amount, cumulative_total_today, and the configured daily_limit at time of request"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-006",
+        "title": "Reject transfer to frozen or inactive account",
+        "as_a": "authenticated retail customer",
+        "i_want": "to receive an immediate rejection when the destination or source account is frozen or inactive",
+        "so_that": "no funds are moved to or from accounts that cannot legally transact",
+        "acceptance_criteria": [
+          "Given the destination payee account has status FROZEN or INACTIVE in the account service, When I submit a transfer to that account, Then the system rejects the request with HTTP 422 and error code ACCOUNT_FROZEN (for FROZEN) or ACCOUNT_INACTIVE (for INACTIVE) before any debit occurs on the source account",
+          "Given my own source account has status FROZEN or INACTIVE, When I submit any transfer, Then the system rejects the request with HTTP 422 and error code SOURCE_ACCOUNT_FROZEN or SOURCE_ACCOUNT_INACTIVE before any processing; a compliance audit event is emitted noting the blocked attempt",
+          "Given the account status changes from FROZEN to ACTIVE (e.g., after ops intervention), When I submit a new transfer, Then the transfer proceeds normally without requiring a new login session",
+          "Given any frozen/inactive account rejection, Then an immutable audit record is written with result FAILED, reason ACCOUNT_FROZEN or ACCOUNT_INACTIVE, actor (customer user_id), affected account_id (masked to last 4 digits in logs), and timestamp; the Ops team receives an alert for frozen-account transfer attempts within 60 seconds"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-007",
+        "title": "Prevent double-debit under concurrent transfer requests",
+        "as_a": "the bank's core system",
+        "i_want": "to guarantee that concurrent transfer requests for the same source account cannot cause the balance to go below zero or debit twice",
+        "so_that": "account integrity and ledger correctness are maintained under race conditions",
+        "acceptance_criteria": [
+          "Given two concurrent transfer requests are submitted for the same source account at the same millisecond (simulated by parallel API calls with distinct Idempotency-Keys), When both requests are processed, Then exactly one of the following outcomes occurs: both succeed if combined debit does not exceed balance, or the second request is rejected with INSUFFICIENT_FUNDS after the first succeeds — in no scenario is the account balance negative after both complete",
+          "Given a distributed lock or optimistic concurrency control is applied at the account balance check-and-debit step, When the first request acquires the lock and debits, Then the second request must re-read the balance after the first commits before deciding to proceed or reject",
+          "Given any scenario where concurrent processing is detected and one request is rejected to prevent double-debit, Then an audit record for the rejected request is written with result FAILED and reason CONCURRENT_CONFLICT, and no partial debit is left unreconciled"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-008",
+        "title": "Compensate debit when credit step fails (Saga rollback)",
+        "as_a": "the bank's transfer orchestration system",
+        "i_want": "to automatically reverse a successful debit when the subsequent credit to the payee account fails",
+        "so_that": "no funds are permanently lost in a partial failure scenario and account consistency is restored",
+        "acceptance_criteria": [
+          "Given the source account has been successfully debited as part of a transfer saga, When the credit step to the payee account fails (e.g., account service returns error, timeout after 3 retries with exponential backoff), Then the saga coordinator triggers a compensating transaction to re-credit the source account for the exact same amount, and the transfer record is marked with status COMPENSATION_TRIGGERED",
+          "Given the compensating re-credit succeeds, When the saga completes the rollback, Then the transfer status is updated to FAILED_COMPENSATED, the customer receives an async notification (email, SMS, push) stating the transfer failed and funds have been returned, and an immutable audit record is written with result FAILED_COMPENSATED, reason CREDIT_STEP_FAILED, including debit_transaction_id, credit_attempt_details, and compensation_transaction_id",
+          "Given the compensating re-credit also fails (double fault), When the saga exhausts compensation retries (max 5 retries over 10 minutes), Then the transfer is marked COMPENSATION_FAILED and a high-priority alert is sent to the Ops team via PagerDuty-equivalent channel within 60 seconds for manual intervention; the customer receives a notification that the transfer is under investigation",
+          "Given any saga compensation event (success or failure), Then a compliance audit record is written that is append-only, immutable, and retained for 7 years per BoT regulation"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-009",
+        "title": "Flag AML threshold breach for compliance review",
+        "as_a": "the bank's compliance system",
+        "i_want": "to detect when a customer's cumulative transfer activity in a single calendar day reaches or exceeds 2,000,000 THB",
+        "so_that": "the compliance team can review the activity per AML obligations without blocking the customer",
+        "acceptance_criteria": [
+          "Given a customer's cumulative outbound transfers (successful) for the current calendar day (UTC+7) reach or exceed 2,000,000 THB, When the transfer-service posts the successful debit event, Then an AML_THRESHOLD_BREACH event is emitted asynchronously to the compliance notification channel within 30 seconds of the triggering transfer completing",
+          "Given the AML flag is triggered, Then the transfer that triggered it is NOT blocked or delayed — the customer experience is unaffected; the flag is advisory for compliance review only",
+          "Given an AML_THRESHOLD_BREACH event is emitted, Then an immutable compliance audit record is written with: customer_id, cumulative_amount_today, triggering_transfer_id, timestamp, flag_type (AML_DAILY_THRESHOLD), and the record is retained for 7 years; the compliance team receives notification within 60 seconds",
+          "Given multiple transfers push the daily total past 2,000,000 THB, Then only the first breach event is emitted per customer per calendar day (deduplication); additional transfers that same day do not re-trigger the alert"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-010",
+        "title": "Add and look up payee account before transfer",
+        "as_a": "authenticated retail customer",
+        "i_want": "to add a payee by account number and look up payee details before initiating a transfer",
+        "so_that": "I can verify the recipient's name before sending money and save frequent payees for future use",
+        "acceptance_criteria": [
+          "Given I enter a valid intra-bank account number (10 digits, conforming to the bank's account number format), When I perform a payee lookup, Then the system returns the account holder's masked name (first name + last initial, e.g., 'Somsak T.') and account type (Savings/Current) within p95 < 500ms, and the lookup result does not expose full name, address, or other PII beyond what is required for transfer confirmation",
+          "Given the account number I enter does not exist in the bank's account registry, When I perform a lookup, Then the system returns HTTP 404 with error code ACCOUNT_NOT_FOUND and no PII is exposed; no audit record for failed lookup is required unless the lookup rate from that user exceeds 10 failed lookups per hour (rate-limit abuse detection)",
+          "Given a successful payee lookup, When I choose to save the payee to my payee list, Then the payee record (account_number, masked_name, account_type, created_at, created_by user_id) is persisted and visible in my payee list within 2 seconds",
+          "Given a saved payee, When I select the payee from my list for a new transfer, Then the payee account number and masked name are pre-populated in the transfer form and the account status is re-validated at transfer submission time (not at payee-save time)",
+          "Given I attempt to add a duplicate payee (same account number already in my payee list), When I save, Then the system returns HTTP 409 with error code PAYEE_ALREADY_EXISTS and prompts me to update the existing entry instead"
+        ],
+        "priority": "MUST"
+      },
+      {
+        "id": "US-011",
+        "title": "Send async notifications after transfer outcome",
+        "as_a": "authenticated retail customer",
+        "i_want": "to receive email, SMS, and push notifications when a transfer succeeds or fails",
+        "so_that": "I am always aware of the outcome of my transfer without having to poll the application",
+        "acceptance_criteria": [
+          "Given a transfer completes successfully, When the transfer-service emits a TransferCompleted event to Kafka, Then the notification-service consumes the event and dispatches: (1) email to the registered email address, (2) SMS to the registered mobile number, (3) push notification to registered devices — all within 60 seconds of the event being emitted, and at least 2 of 3 channels must succeed before notification is considered delivered",
+          "Given a transfer fails (any reason), When the transfer-service emits a TransferFailed event, Then the notification-service dispatches notifications on all available channels within 60 seconds, with a message clearly stating the failure reason (human-readable, no technical error codes exposed to customer) and the transfer reference number for support",
+          "Given a notification dispatch fails for one channel (e.g., SMS gateway timeout), When the notification-service retries, Then it retries up to 3 times with exponential backoff; if all retries fail, it logs the failure and marks that channel as undelivered without affecting other channels; an ops alert is raised if the undelivered count exceeds 1% of daily volume",
+          "Given a customer has opted out of SMS notifications, When a transfer event is emitted, Then SMS is skipped and only email and push are attempted; opt-out preference is respected within 24 hours of customer update per PDPA consent management requirements"
+        ],
+        "priority": "MUST"
+      }
+    ],
+    "process_flows": [
+      {
+        "name": "Happy Path Intra-Bank Transfer",
+        "steps": [
+          "1. Customer authenticates via OAuth2/OIDC; API Gateway validates JWT (signature, expiry, scope: transfers:write)",
+          "2. Customer submits POST /transfers with: source_account_id, destination_account_id, amount, currency (THB), memo (optional, <= 200 chars), Idempotency-Key header",
+          "3. API Gateway rate-limits request (per-customer token bucket) and forwards to transfer-service",
+          "4. transfer-service checks Idempotency-Key store: if key exists and TTL < 24h, return cached response (IDEMPOTENT_REPLAY)",
+          "5. transfer-service validates request fields: amount > 0, currency = THB, memo length, account IDs format",
+          "6. transfer-service calls account-service to verify source account status (ACTIVE) and available balance >= amount",
+          "7. transfer-service checks per-transaction limit: amount <= customer_tier.transaction_limit",
+          "8. transfer-service checks daily cumulative limit: existing_daily_total + amount <= customer_tier.daily_limit",
+          "9. transfer-service calls account-service to verify destination account status (ACTIVE)",
+          "10. transfer-service initiates Saga: places a hold (reserve) on source account balance",
+          "11. Saga Step 1 — Debit: transfer-service instructs account-service to debit source account; ledger-service records debit journal entry",
+          "12. Saga Step 2 — Credit: transfer-service instructs account-service to credit destination account; ledger-service records credit journal entry",
+          "13. transfer-service stores Idempotency-Key with result (TTL 24h) and persists transfer record with status COMPLETED",
+          "14. transfer-service emits TransferCompleted event to Kafka (outbox pattern)",
+          "15. audit-service consumes event and appends immutable audit record",
+          "16. notification-service consumes event and dispatches email, SMS, push asynchronously",
+          "17. transfer-service returns HTTP 200 with transfer_id, reference_number, timestamp, status COMPLETED to client"
+        ],
+        "alt_paths": [
+          "A1 (Idempotency replay at step 4): Return cached response immediately; skip all subsequent steps",
+          "A2 (Insufficient balance at step 6): Return HTTP 422 INSUFFICIENT_FUNDS; write audit record; stop",
+          "A3 (Per-transaction limit at step 7): Return HTTP 422 TRANSACTION_LIMIT_EXCEEDED; write audit record; stop",
+          "A4 (Daily limit at step 8): Return HTTP 422 DAILY_LIMIT_EXCEEDED; write audit record; stop",
+          "A5 (Source account frozen/inactive at step 6): Return HTTP 422 SOURCE_ACCOUNT_FROZEN; write audit record; emit ops alert; stop",
+          "A6 (Destination account frozen/inactive at step 9): Return HTTP 422 ACCOUNT_FROZEN; write audit record; stop",
+          "A7 (Credit step fails at step 12): Trigger Saga compensation — see Saga Compensation Flow",
+          "A8 (AML threshold triggered at step 14): AML_THRESHOLD_BREACH event emitted in parallel; transfer is not blocked"
+        ]
+      },
+      {
+        "name": "Saga Compensation Flow (Debit Succeeded, Credit Failed)",
+        "steps": [
+          "1. Saga coordinator detects credit step failure (account-service error or timeout)",
+          "2. Coordinator retries credit step up to 3 times with exponential backoff (1s, 2s, 4s)",
+          "3. If all credit retries exhausted, coordinator initiates compensating transaction",
+          "4. Compensation Step: account-service reverses the debit on source account (re-credits source_amount exactly)",
+          "5. ledger-service records compensating journal entries (debit on destination reversal placeholder, credit on source)",
+          "6. transfer-service updates transfer record status to FAILED_COMPENSATED, stores compensation_transaction_id",
+          "7. Idempotency-Key result is updated to reflect FAILED_COMPENSATED outcome",
+          "8. TransferFailed event is emitted to Kafka with reason CREDIT_STEP_FAILED and compensation details",
+          "9. audit-service appends immutable audit record for the compensation event",
+          "10. notification-service dispatches failure notifications (email, SMS, push) to customer",
+          "11. transfer-service returns HTTP 200 (synchronous response was already sent) — status update is async; if client is still polling, status endpoint returns FAILED_COMPENSATED"
+        ],
+        "alt_paths": [
+          "B1 (Compensation re-credit also fails): Retry compensation up to 5 times over 10 minutes; if all fail, mark COMPENSATION_FAILED; send PagerDuty-equivalent high-priority alert to Ops team within 60s; customer notified the transfer is under investigation",
+          "B2 (Compensation succeeds on retry 2 or 3): Continue from step 6 normally",
+          "B3 (Network partition during saga): Saga coordinator persists saga state in durable store; on recovery, resumes from last known step using idempotent operations"
+        ]
+      },
+      {
+        "name": "Payee Add and Lookup Flow",
+        "steps": [
+          "1. Customer enters a 10-digit account number in the payee lookup form",
+          "2. Client submits GET /accounts/lookup?account_number={number} to transfer-service (or account-service via gateway)",
+          "3. account-service validates account number format (10 digits, numeric)",
+          "4. account-service queries account registry: if not found, return HTTP 404 ACCOUNT_NOT_FOUND",
+          "5. If found, account-service returns: masked_name (first name + last initial), account_type (Savings/Current), account status (ACTIVE/FROZEN/INACTIVE)",
+          "6. Customer reviews the masked name and account type to confirm correct recipient",
+          "7. (Optional) Customer clicks 'Save Payee': client submits POST /payees with account_number, masked_name, nickname (optional)",
+          "8. transfer-service checks for duplicate payee (same account_number in customer's payee list): if duplicate, return HTTP 409 PAYEE_ALREADY_EXISTS",
+          "9. Payee record is persisted with: payee_id, customer_id (owner), account_number, masked_name, account_type, nickname, created_at, is_active",
+          "10. Customer selects payee (saved or fresh lookup) and proceeds to transfer submission"
+        ],
+        "alt_paths": [
+          "C1 (Account not found): Return HTTP 404 ACCOUNT_NOT_FOUND; no PII exposed; log failed lookup count per user for abuse detection (rate limit: > 10 failed lookups/hour triggers alert)",
+          "C2 (Duplicate payee save): Return HTTP 409 PAYEE_ALREADY_EXISTS; prompt to update nickname of existing entry",
+          "C3 (Payee account becomes frozen after save): Account status re-validated at transfer submission time; transfer rejected with ACCOUNT_FROZEN at that point"
+        ]
+      }
+    ],
+    "data_requirements": [
+      {
+        "entity": "Transfer",
+        "fields": [
+          "transfer_id (UUID, PK)",
+          "reference_number (human-readable, unique, e.g., TRF-YYYYMMDD-XXXXXXXX)",
+          "source_account_id (FK → Account)",
+          "destination_account_id (FK → Account)",
+          "amount (DECIMAL 18,2, NOT NULL)",
+          "currency (CHAR 3, default THB)",
+          "memo (VARCHAR 200, nullable)",
+          "status (ENUM: PENDING, COMPLETED, FAILED, FAILED_COMPENSATED, COMPENSATION_FAILED, COMPENSATION_PENDING)",
+          "initiator_user_id (UUID, FK → User)",
+          "channel (ENUM: INTERNET_BANKING, MOBILE_BANKING)",
+          "idempotency_key (VARCHAR 255, indexed)",
+          "saga_id (UUID, nullable, for saga tracking)",
+          "compensation_transfer_id (UUID, nullable, FK → Transfer)",
+          "created_at (TIMESTAMP WITH TIME ZONE, NOT NULL)",
+          "updated_at (TIMESTAMP WITH TIME ZONE, NOT NULL)",
+          "completed_at (TIMESTAMP WITH TIME ZONE, nullable)",
+          "failure_reason (VARCHAR 100, nullable)",
+          "correlation_id (UUID, for distributed tracing)"
+        ],
+        "pii": true,
+        "pii_notes": "source_account_id and destination_account_id indirectly identify persons; initiator_user_id directly identifies customer. Amount and memo may contain sensitive financial info. Encrypted at rest (AES-256). Retained 7 years per BoT regulation."
+      },
+      {
+        "entity": "Account",
+        "fields": [
+          "account_id (UUID, PK)",
+          "account_number (VARCHAR 20, unique, masked to last 4 digits in API responses)",
+          "customer_id (UUID, FK → Customer)",
+          "account_type (ENUM: SAVINGS, CURRENT)",
+          "status (ENUM: ACTIVE, FROZEN, INACTIVE, CLOSED)",
+          "available_balance (DECIMAL 18,2)",
+          "ledger_balance (DECIMAL 18,2)",
+          "currency (CHAR 3, default THB)",
+          "per_transaction_limit (DECIMAL 18,2, default 100000.00)",
+          "daily_limit (DECIMAL 18,2, default 500000.00)",
+          "customer_tier (ENUM: STANDARD, SILVER, GOLD, PLATINUM)",
+          "created_at (TIMESTAMP WITH TIME ZONE)",
+          "updated_at (TIMESTAMP WITH TIME ZONE)"
+        ],
+        "pii": true,
+        "pii_notes": "account_number and customer_id identify a natural person. balance is sensitive financial data. Encrypted at rest. Subject to PDPA data subject rights (export, erasure with legal hold override)."
+      },
+      {
+        "entity": "Payee",
+        "fields": [
+          "payee_id (UUID, PK)",
+          "owner_customer_id (UUID, FK → Customer — the customer who saved this payee)",
+          "account_number (VARCHAR 20, encrypted at rest)",
+          "masked_name (VARCHAR 100 — first name + last initial only)",
+          "account_type (ENUM: SAVINGS, CURRENT)",
+          "nickname (VARCHAR 100, nullable, customer-defined label)",
+          "is_active (BOOLEAN, default true)",
+          "created_at (TIMESTAMP WITH TIME ZONE)",
+          "updated_at (TIMESTAMP WITH TIME ZONE)"
+        ],
+        "pii": true,
+        "pii_notes": "account_number is PII of the payee (a third party). masked_name is minimized PII. owner_customer_id links to the customer who saved it. Encrypted at rest. Subject to PDPA erasure requests (with legal hold check on transfers referencing this payee)."
+      },
+      {
+        "entity": "IdempotencyKey",
+        "fields": [
+          "key_hash (VARCHAR 64, SHA-256 of raw Idempotency-Key, PK)",
+          "owner_customer_id (UUID, FK → Customer)",
+          "transfer_id (UUID, FK → Transfer, nullable)",
+          "request_checksum (VARCHAR 64 — hash of request payload for conflict detection)",
+          "cached_response_code (SMALLINT — HTTP status code)",
+          "cached_response_body (JSONB — full response body)",
+          "result_status (ENUM: PENDING, COMPLETED, FAILED, REJECTED, CONFLICT)",
+          "created_at (TIMESTAMP WITH TIME ZONE)",
+          "expires_at (TIMESTAMP WITH TIME ZONE — created_at + 24h, indexed for TTL cleanup)"
+        ],
+        "pii": false,
+        "pii_notes": "Key hash is not PII. cached_response_body may contain transfer amounts (masked). owner_customer_id is a reference. Store minimal data; purge after TTL."
+      },
+      {
+        "entity": "AuditLog",
+        "fields": [
+          "audit_id (UUID, PK)",
+          "event_type (VARCHAR 100, e.g., TRANSFER_INITIATED, TRANSFER_COMPLETED, TRANSFER_FAILED, COMPENSATION_TRIGGERED, COMPENSATION_COMPLETED, COMPENSATION_FAILED, AML_THRESHOLD_BREACH, ACCOUNT_FROZEN_BLOCK, IDEMPOTENCY_CONFLICT)",
+          "transfer_id (UUID, nullable FK → Transfer)",
+          "actor_user_id (UUID — customer or system service account)",
+          "actor_type (ENUM: CUSTOMER, SYSTEM, OPS_AGENT)",
+          "source_account_id (VARCHAR 50 — masked to last 4 digits in this record)",
+          "destination_account_id (VARCHAR 50 — masked to last 4 digits)",
+          "amount (DECIMAL 18,2)",
+          "currency (CHAR 3)",
+          "result (ENUM: SUCCESS, FAILED, PENDING, COMPENSATED, FLAGGED)",
+          "failure_reason (VARCHAR 200, nullable)",
+          "channel (ENUM: INTERNET_BANKING, MOBILE_BANKING, SYSTEM)",
+          "ip_address (VARCHAR 45 — IPv4/IPv6, hashed per PDPA minimization)",
+          "user_agent (VARCHAR 500, nullable)",
+          "correlation_id (UUID — distributed trace ID)",
+          "limit_snapshot_transaction (DECIMAL 18,2 — per-tx limit at time of event)",
+          "limit_snapshot_daily (DECIMAL 18,2 — daily limit at time of event)",
+          "created_at (TIMESTAMP WITH TIME ZONE, NOT NULL, immutable)",
+          "partition_key (DATE — for time-based partitioning)"
+        ],
+        "pii": true,
+        "pii_notes": "actor_user_id is PII. Account IDs are masked but indirectly identify persons. ip_address is PII (hashed). Append-only (no UPDATE/DELETE). Retained 7 years immutably per BoT regulation and AML requirements. PDPA erasure requests cannot delete audit records that are subject to legal retention obligations — legal hold override applies."
+      },
+      {
+        "entity": "DailyTransferAccumulator",
+        "fields": [
+          "accumulator_id (UUID, PK)",
+          "account_id (UUID, FK → Account)",
+          "accumulation_date (DATE — Bangkok timezone, UTC+7)",
+          "cumulative_amount (DECIMAL 18,2)",
+          "aml_threshold_breached (BOOLEAN, default false)",
+          "aml_breach_notified_at (TIMESTAMP WITH TIME ZONE, nullable)",
+          "last_updated_at (TIMESTAMP WITH TIME ZONE)",
+          "version (INTEGER — optimistic lock version)"
+        ],
+        "pii": false,
+        "pii_notes": "account_id is a reference, not direct PII. Aggregated financial data. Retained per transfer retention policy."
+      }
+    ],
+    "non_functional": {
+      "performance": "p95 < 1000ms end-to-end (client request to HTTP response with transfer confirmation); p99 < 3000ms; transfer-service internal processing (excluding network) p95 < 300ms; payee lookup p95 < 500ms; notification dispatch within 60 seconds of transfer event emission",
+      "availability": "99.95% rolling 30-day uptime for transfer-service and account-service (allows max ~22 minutes downtime/month); 99.9% for notification-service (async, non-blocking to transfer flow); API Gateway 99.99%",
+      "scalability": "Sustained throughput: 100 TPS for transfer submission; peak burst: 500 TPS for up to 5 minutes; horizontal scaling via Kubernetes HPA; Kafka partition count sized for 500 TPS throughput with replication factor 3; daily accumulator uses optimistic locking to handle concurrent updates at peak load",
+      "security": "OAuth2/OIDC with JWT (RS256, 15-minute access token TTL, refresh token rotation); HTTPS/TLS 1.2+ enforced at WAF; OWASP Top 10 mitigations required; all financial endpoints require Idempotency-Key header; account numbers masked to last 4 digits in API responses and non-encrypted logs; balances not exposed in logs (PDPA minimization); rate limiting: 60 requests/minute per customer at API Gateway; PII fields encrypted at rest (AES-256-GCM); secrets managed via Vault; no PAN data stored (PCI-DSS scoping exclusion confirmed); IP-based anomaly detection at gateway layer",
+      "resilience": "RTO <= 15 minutes (time to restore service after failure); RPO <= 1 minute (max data loss on failure, ensured by synchronous PostgreSQL writes + Kafka durable log); Resilience4j circuit breaker on account-service calls from transfer-service (threshold: 50% errors in 10s window); retry with exponential backoff (max 3 retries) on transient failures; saga state persisted durably to survive restarts",
+      "observability": "Distributed tracing via OpenTelemetry with correlation_id propagated across all services; structured JSON logs with correlation_id, transfer_id, masked account references; Prometheus metrics: transfer_requests_total (by status), transfer_duration_histogram (p50/p95/p99), saga_compensation_total, daily_limit_rejections_total; Grafana dashboards per service; alert on: error rate > 1% over 5 minutes, p99 latency > 3s over 5 minutes, compensation_failure count > 0",
+      "data_retention": "Transfer records: 7 years (BoT legal requirement); Audit logs: 7 years immutable (BoT + AML); IdempotencyKey records: 24 hours TTL then purged; DailyAccumulator: 90 days rolling (summary kept in transfer records); Customer PII: per PDPA retention schedule with legal hold override",
+      "compliance": [
+        "PDPA (Thailand Personal Data Protection Act): data minimization in logs (mask account numbers, hash IP), data subject rights (export and erasure with legal hold override for financial records), consent management for notification preferences, DPA registration if processing sensitive data at scale",
+        "Bank of Thailand IT Risk Management Guidelines (BoT Circular): mandatory audit logging for all financial transactions, 7-year immutable retention, segregation of duties (ops cannot modify audit records), incident reporting within 1 hour for critical failures, business continuity plan (RTO/RPO targets above)",
+        "AML (Anti-Money Laundering Act B.E. 2542 and amendments): flag (not block) cumulative daily outbound transfers >= 2,000,000 THB; report to compliance team; records available for AMLO examination on request; 7-year retention of flagged records",
+        "PCI-DSS: scoped OUT for this feature (no card PAN data stored, processed, or transmitted — intra-bank account transfers only); note: if future FX or card-to-account features are added, PCI-DSS scope must be re-evaluated",
+        "GDPR: applicable to any EU-resident customers; data subject rights mirrored by PDPA implementation; data residency: all data stored in Thailand-based data centers; cross-border data transfer prohibited without adequacy decision or SCCs"
+      ]
+    },
+    "out_of_scope": [
+      "Inter-bank transfers (PromptPay, BAHTNET, SWIFT, domestic ACH)",
+      "Cross-currency (FX) transfers — THB only in v1",
+      "Scheduled transfers (future date / recurring)",
+      "Bulk / batch transfer (CSV upload)",
+      "Refund / reversal initiated by customer — manual Ops process only in v1",
+      "Card-to-account transfers",
+      "E-wallet integration",
+      "ML-based fraud scoring (Fraud team hook — v2)",
+      "International remittance",
+      "PromptPay ID lookup (phone / national ID as account proxy)",
+      "Multi-currency accounts",
+      "Transfer approval workflows (dual authorization for corporate — v2+)",
+      "Beneficiary bank validation beyond intra-bank registry"
+    ],
+    "open_questions": [
+      "OQ-001: Daily limit reset timezone — requirement states Bangkok time (UTC+7) but system uses UTC internally. Confirm: should DailyTransferAccumulator reset at midnight UTC+7 (17:00 UTC previous day)? This affects customers transacting around midnight. Decision required before DB schema design.",
+      "OQ-002: Per-transaction and daily limits are described as 'configurable per customer tier' — who manages tier assignment and limit overrides? Is there a self-service upgrade path or is it purely ops-driven? This affects whether an admin API is in scope for v1.",
+      "OQ-003: The requirement states own-to-own transfers (own -> own) are supported. Should the source and destination account validation differ for self-transfers? (E.g., no payee lookup required, no masked-name confirmation needed.) Confirm UX flow.",
+      "OQ-004: Notification channels — the requirement lists email + SMS + push. What is the fallback priority order if a channel is unavailable? Is the transfer considered 'notified' if at least 1 of 3 channels delivers? (Current AC assumes 2 of 3 — needs business sign-off.)",
+      "OQ-005: AML threshold of 2,000,000 THB daily — does this apply to inbound credits, outbound debits, or combined volume? The requirement says 'flag transactions >= 2,000,000 THB in a day' but AML Act typically refers to cash transactions. Confirm: does it apply to electronic intra-bank transfers? Requires Compliance SME sign-off.",
+      "OQ-006: Saga compensation double-fault (COMPENSATION_FAILED) — what is the expected customer-facing SLA for manual resolution by Ops? Is there a regulatory obligation to resolve and restore funds within a specific timeframe (e.g., 24 hours)? This affects Ops runbook design.",
+      "OQ-007: Idempotency-Key — is the key generated client-side (by the Angular app) or server-side? If client-side, what format is mandated (UUID v4 recommended)? Client SDK behavior on timeout needs to be specified.",
+      "OQ-008: Payee masked name display — showing only first name + last initial may be insufficient for common names (e.g., many 'Somchai S.' exist). Has the UX team confirmed this level of masking is acceptable for transfer confirmation? Consider showing last 4 digits of account number alongside masked name."
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-18T09:00:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": null,
+    "notes": "Initial BA analysis for Money Transfer v1 (intra-bank, THB only, retail internet banking). All 8 required stories present plus 3 optional stories (US-009 AML flag, US-010 payee management, US-011 notification fan-out). All 7 hard constraints traced to at least one AC. 8 open questions surfaced for SME/stakeholder confirmation."
+  }
+}
