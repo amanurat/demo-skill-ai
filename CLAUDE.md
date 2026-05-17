@@ -100,6 +100,8 @@ See [docs/architecture/workflow.md](docs/architecture/workflow.md) for feedback 
 
 ## 🚦 Quick Start (for the user)
 
+> **📘 Full step-by-step guide:** [docs/playbook.md](docs/playbook.md) — interactive checklist สำหรับทุก session (Discovery → Deploy) พร้อมตัวอย่างคำสั่ง + git commit templates
+
 ตัวอย่างคำสั่งที่ใช้ได้ทันที:
 
 ```
