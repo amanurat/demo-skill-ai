@@ -40,25 +40,118 @@
 - [ ] Claude อ่าน `CLAUDE.md` แล้ว (อัตโนมัติทุก session)
 
 ### Step 2.1 — BA Agent
-**พิมพ์ให้ Claude:**
+
+**พิมพ์ให้ Claude (copy ทั้งบล็อก):**
+
 ```
-/agents ดูรายการ banking-* agents มีอะไรบ้าง
+ก่อนเริ่ม ขอให้คุณยืนยันว่าได้อ่านไฟล์เหล่านี้แล้ว:
+- CLAUDE.md (Player playbook)
+- .claude/agents/banking-ba.md (BA persona + DoD)
+- docs/architecture/handoff-schema.md (artifact format)
 
-จากนั้นใช้ banking-ba วิเคราะห์ Money Transfer feature:
-- ผู้ใช้ที่ login แล้วต้องโอนเงินจากบัญชีตัวเองไปบัญชีอื่นได้
-- รองรับ idempotency, daily limit, audit trail
-- โปรดส่งกลับเป็น handoff artifact ตาม docs/architecture/handoff-schema.md
+จากนั้นใช้ Task tool launch subagent_type=banking-ba เพื่อวิเคราะห์ feature ต่อไปนี้:
+
+# Feature: Money Transfer (Intra-bank, THB) — Internet Banking v1
+
+## Business Context
+- ระบบ Internet Banking สำหรับลูกค้ารายย่อย (retail)
+- ลูกค้าที่ login แล้ว (OAuth2/JWT) ต้องโอนเงินภายในธนาคารเดียวกันได้ทันที 24/7
+
+## In Scope (v1)
+- โอนระหว่างบัญชี Savings / Current ภายในธนาคารเดียวกัน (intra-bank)
+- สกุลเงิน THB เท่านั้น
+- โอนให้ตัวเอง (own → own) และโอนให้ผู้อื่น (own → external payee)
+- ผู้ใช้สามารถเพิ่ม / ค้นหา payee จากเลขที่บัญชีได้ก่อนโอน
+- รองรับ memo / note สำหรับการโอน (≤ 200 chars)
+- ส่ง notification (email + SMS + push) แบบ async หลังโอนสำเร็จ/ล้มเหลว
+
+## Out of Scope (defer to v2+)
+- โอนข้ามธนาคาร / PromptPay / BAHTNET
+- โอนข้ามสกุลเงิน (FX)
+- Scheduled / recurring transfers
+- Bulk / batch transfer (CSV upload)
+- การคืนเงิน (refund) — manual ops เท่านั้นใน v1
+- Card-to-account, e-wallet integration
+
+## Hard Constraints (ต้องตอบให้ครบ)
+1. **Idempotency-Key (header)** ป้องกัน duplicate, TTL 24h
+2. **Per-transaction limit** เริ่มต้น 100,000 THB (configurable per customer tier)
+3. **Daily cumulative limit** เริ่มต้น 500,000 THB (configurable)
+4. **Audit trail** ทุก attempt (success/failure) — append-only, immutable
+5. **Frozen / inactive account** ต้องถูกปฏิเสธก่อนทำ debit
+6. **Concurrent requests** เดียวกัน → ต้องไม่ double-debit
+7. **Partial failure** (debit สำเร็จ แต่ credit ล้มเหลว) → ต้อง compensate
+
+## Stakeholders
+- Customer (initiator)
+- Compliance (AML thresholds, audit retention 7 ปี)
+- Ops (monitoring, dispute resolution)
+- Fraud team (anomaly hooks — ML model จะมา v2)
+- Customer Support (จะดู transfer history)
+
+## NFR Targets (ต้อง quantify)
+- Availability: 99.95% rolling 30d
+- Latency: p95 < 1s, p99 < 3s (end-to-end client → confirmation)
+- Throughput: 100 TPS sustained, peak 500 TPS
+- Data retention: transfers 7 yrs (legal); audit 7 yrs immutable
+- RTO ≤ 15 min, RPO ≤ 1 min
+
+## Compliance / Regulatory
+- PCI-DSS (out-of-scope expansion: ห้ามเก็บ PAN — งดงานนี้ไม่เกี่ยวกับบัตร)
+- GDPR / PDPA (Thailand): subject rights (export, erasure with legal hold override)
+- Bank of Thailand IT regulations (logging, retention, segregation)
+- AML: flag transactions ≥ 2,000,000 THB ในวันเดียว (notify compliance, ไม่ block)
+
+## Required Stories (ขั้นต่ำ)
+ให้คุณสร้าง user stories อย่างน้อย 8 ตัว ครอบคลุม:
+1. Happy path (โอนสำเร็จ)
+2. Insufficient balance
+3. Duplicate request (idempotency-key reuse)
+4. Per-transaction limit exceeded
+5. Daily cumulative limit exceeded
+6. Frozen / inactive payee account
+7. Concurrent transfers (no double-debit)
+8. Saga compensation (credit failed → reverse debit)
++ (optional) AML threshold flag, notification fan-out, payee management
+
+## Output Requirements
+
+1. **Emit handoff artifact** ตาม [docs/architecture/handoff-schema.md](../docs/architecture/handoff-schema.md):
+   - Envelope: from_agent=banking-ba, to_agent=banking-solution-architect, phase=DISCOVERY, feature=money-transfer
+   - Payload schema: user_stories, process_flows, data_requirements, non_functional, out_of_scope, open_questions
+
+2. **Save** เป็นไฟล์ `docs/artifacts/S2-ba-money-transfer.json` (สร้าง folder docs/artifacts ถ้ายังไม่มี)
+
+3. **Self-validate** ตาม banking-ba.md "Acceptance Criteria (own DoD)" ก่อน return:
+   - ทุก feature → ≥ 1 story
+   - ทุก story → Given/When/Then ≥ 3 AC รวม happy + ≥ 1 error path
+   - NFRs quantified
+   - Compliance list complete
+   - Out-of-scope explicit
+   - open_questions section: ระบุข้อสงสัย (หรือ empty array ถ้าไม่มี)
+
+4. **Quality gate ของ phase Discovery → Planning** (ดู docs/architecture/quality-gates.md):
+   - Requirement completeness ≥ 90%
+   - ไม่มีคำกำกวม (etc., and so on, somehow)
+   - ทุก hard constraint ด้านบน → traced ไป AC อย่างน้อย 1 ตัว
+
+หลัง agent ส่งกลับ ขอให้คุณ (Player) validate quality gate แล้วรายงานสรุปสั้นๆ ว่า:
+- ผ่าน gate หรือไม่
+- จำนวน stories
+- จำนวน open_questions
+- พร้อมข้าม Step 2.2 หรือต้อง loop กลับ
 ```
 
-**Expected output:**
-- [ ] User stories ≥ 5 ตัว (happy path + insufficient + duplicate + limit + audit)
-- [ ] AC แบบ Given/When/Then ทุกตัว
-- [ ] NFR (p95, availability)
-- [ ] Compliance list (PCI-DSS, GDPR, PDPA)
-- [ ] Out-of-scope explicit
-- [ ] JSON artifact validates against schema
+**Expected output (Player ตรวจตามนี้):**
+- [ ] User stories ≥ 8 ครอบคลุม 8 cases ที่ระบุ
+- [ ] ทุก story มี Given/When/Then ≥ 3 AC (รวม error path)
+- [ ] NFR quantified ครบ (availability, latency, throughput, RTO/RPO)
+- [ ] Compliance list ครบ (PCI-DSS, GDPR/PDPA, BoT, AML)
+- [ ] Out-of-scope ระบุชัด
+- [ ] `open_questions` — ถ้ามี ให้ Player ถามผู้ใช้ก่อนข้าม
+- [ ] JSON validates ตาม envelope + BA payload schema
 
-**Save artifact:** Player ควรเซฟ output เป็น `docs/artifacts/S2-ba-money-transfer.json`
+**Save artifact:** `docs/artifacts/S2-ba-money-transfer.json`
 
 **Commit:**
 ```bash
