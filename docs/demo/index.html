@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banking SDLC AI — Multi-Agent Demo Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --accent: #4f8ef7;
+    --accent2: #34d399;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --ba:     #818cf8;
+    --arch:   #34d399;
+    --tl:     #fb923c;
+    --dev:    #60a5fa;
+    --rev:    #a78bfa;
+    --sec:    #f87171;
+    --qa:     #4ade80;
+    --devops: #38bdf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; line-height: 1.6; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ─── Header ─── */
+  .header { background: linear-gradient(135deg, #1e2538 0%, #0f1117 100%); border-bottom: 1px solid var(--border); padding: 32px 40px 24px; }
+  .header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .header h1 span { color: var(--accent); }
+  .header p { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
+  .badge-success { background: #064e3b; color: var(--accent2); border: 1px solid #065f46; }
+  .badge-warn { background: #451a03; color: var(--warn); border: 1px solid #78350f; }
+
+  /* ─── Metrics bar ─── */
+  .metrics { display: flex; gap: 12px; padding: 20px 40px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background: #12151f; }
+  .metric { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; min-width: 130px; flex: 1; }
+  .metric .value { font-size: 26px; font-weight: 700; line-height: 1; }
+  .metric .label { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric.green .value { color: var(--accent2); }
+  .metric.blue .value { color: var(--accent); }
+  .metric.orange .value { color: var(--warn); }
+  .metric.red .value { color: var(--danger); }
+
+  /* ─── Main layout ─── */
+  .main { display: grid; grid-template-columns: 1fr 340px; gap: 0; }
+  @media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
+
+  /* ─── Timeline ─── */
+  .timeline-section { padding: 28px 40px; border-right: 1px solid var(--border); }
+  .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 20px; }
+  .phase-chain { position: relative; }
+  .phase-chain::before { content: ''; position: absolute; left: 28px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+
+  .phase-card { display: flex; gap: 16px; margin-bottom: 16px; position: relative; }
+  .phase-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; position: relative; z-index: 1; border: 2px solid transparent; }
+  .phase-icon.pass { border-color: var(--accent2); }
+  .phase-icon.warn { border-color: var(--warn); }
+  .phase-body { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; flex: 1; transition: border-color .2s; }
+  .phase-body:hover { border-color: var(--accent); }
+  .phase-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .phase-name { font-weight: 600; font-size: 13px; }
+  .phase-agent { font-size: 11px; color: var(--muted); font-family: monospace; }
+  .phase-desc { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .phase-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+  .tag-blue { background: #1e3a5f; color: #93c5fd; }
+  .tag-green { background: #064e3b; color: #6ee7b7; }
+  .tag-orange { background: #431407; color: #fdba74; }
+  .tag-purple { background: #2e1065; color: #c4b5fd; }
+  .tag-red { background: #450a0a; color: #fca5a5; }
+  .tag-cyan { background: #0c2a3e; color: #67e8f9; }
+  .gate { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .gate-pass { background: #064e3b; color: var(--accent2); }
+  .gate-warn { background: #451a03; color: var(--warn); }
+  .phase-link { font-size: 11px; margin-top: 6px; display: block; }
+
+  /* ─── Sidebar ─── */
+  .sidebar { padding: 28px 24px; display: flex; flex-direction: column; gap: 20px; }
+  .sidebar-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .sidebar-card h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 12px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .nav-item:last-child { border-bottom: none; }
+  .nav-item .icon { font-size: 14px; width: 20px; }
+  .stack-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .stack-item:last-child { border-bottom: none; }
+  .stack-val { color: var(--accent); font-family: monospace; font-size: 11px; }
+
+  /* ─── Hard gates ─── */
+  .gate-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .gate-row:last-child { border-bottom: none; }
+  .gate-icon { font-size: 14px; }
+
+  /* ─── Footer ─── */
+  .footer { padding: 20px 40px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<div class="header">
+  <h1>Banking SDLC <span>AI</span> — Multi-Agent Demo <span class="badge badge-success">v1 Scaffold ✅</span></h1>
+  <p>Money Transfer feature built end-to-end by 9 specialized AI agents · 2026-05-18 · Iteration 1</p>
+</div>
+
+<!-- ═══════════════ METRICS ═══════════════ -->
+<div class="metrics">
+  <div class="metric green"><div class="value">8</div><div class="label">SDLC Phases</div></div>
+  <div class="metric green"><div class="value">40/40</div><div class="label">Unit Tests</div></div>
+  <div class="metric green"><div class="value">98%</div><div class="label">Money-Path Cov</div></div>
+  <div class="metric green"><div class="value">0</div><div class="label">Critical/High CVEs</div></div>
+  <div class="metric blue"><div class="value">16</div><div class="label">ADRs Recorded</div></div>
+  <div class="metric blue"><div class="value">~120</div><div class="label">Files Produced</div></div>
+  <div class="metric blue"><div class="value">23</div><div class="label">Infra Files</div></div>
+  <div class="metric orange"><div class="value">5</div><div class="label">Staging Blockers</div></div>
+</div>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div class="main">
+
+  <!-- ─── Timeline ─── -->
+  <div class="timeline-section">
+    <div class="section-title">SDLC Phase Progression</div>
+    <div class="phase-chain">
+
+      <!-- S2 BA -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#1e1b4b;">🎯</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S2 — DISCOVERY</span>
+            <span class="gate gate-pass">✅ Pass</span>
+          </div>
+          <div class="phase-agent">banking-ba</div>
+          <div class="phase-desc">Analyzed raw requirement → decomposed into user stories, mapped data entities, quantified NFRs, flagged compliance open questions</div>
+          <div class="phase-tags">
+            <span class="tag tag-purple">11 user stories</span>
+            <span class="tag tag-purple">43 acceptance criteria</span>
+            <span class="tag tag-purple">6 data entities</span>
+            <span class="tag tag-orange">8 open questions</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S2-ba-money-transfer.md">→ View S2 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S3 Architect -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#064e3b;">🏛</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S3 — PLANNING</span>
+            <span class="gate gate-pass">✅ Pass</span>
+          </div>
+          <div class="phase-agent">banking-solution-architect</div>
+          <div class="phase-desc">Designed 9-service microservice architecture across 7 bounded contexts, defined Kafka event flows, C4 diagram, risk register</div>
+          <div class="phase-tags">
+            <span class="tag tag-green">9 microservices</span>
+            <span class="tag tag-green">14 Kafka events</span>
+            <span class="tag tag-green">12 ADRs</span>
+            <span class="tag tag-orange">6 risks tracked</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S3-solution-architect-money-transfer.md">→ View S3 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S4 Tech Lead -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#431407;">⚙️</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S4 — DESIGN</span>
+            <span class="gate gate-pass">✅ Pass</span>
+          </div>
+          <div class="phase-agent">banking-tech-lead</div>
+          <div class="phase-desc">Produced the full API contract and DB schema — OpenAPI spec, 5 Flyway migrations, 3 Avro schemas, STRIDE review, 4 new ADRs</div>
+          <div class="phase-tags">
+            <span class="tag tag-orange">22KB OpenAPI spec</span>
+            <span class="tag tag-orange">5 DB migrations</span>
+            <span class="tag tag-orange">3 Avro schemas</span>
+            <span class="tag tag-orange">ADR-013..016</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S4-tech-lead-money-transfer.md">→ View S4 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S5 Backend Dev -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#1e3a5f;">💻</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S5 — DEVELOPMENT</span>
+            <span class="gate gate-pass">✅ Pass</span>
+          </div>
+          <div class="phase-agent">banking-backend-dev</div>
+          <div class="phase-desc">Implemented US-001 (happy path) + US-003 (idempotency) using hexagonal architecture. Ran actual mvn test and verified coverage.</div>
+          <div class="phase-tags">
+            <span class="tag tag-blue">54 Java files</span>
+            <span class="tag tag-green">40/40 tests pass</span>
+            <span class="tag tag-blue">Hexagonal arch</span>
+            <span class="tag tag-blue">Outbox + Saga</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S5-backend-dev-money-transfer.md">→ View S5 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S6 Reviewer -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#2e1065;">🔍</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S6 — REVIEW</span>
+            <span class="gate gate-pass">✅ Pass</span>
+          </div>
+          <div class="phase-agent">banking-reviewer</div>
+          <div class="phase-desc">Principal engineer review of all 54 files against hexagonal layering, domain richness, money handling, idempotency, and anti-pattern checklist</div>
+          <div class="phase-tags">
+            <span class="tag tag-green">0 blockers</span>
+            <span class="tag tag-orange">5 majors (tracked)</span>
+            <span class="tag tag-purple">13 minors</span>
+            <span class="tag tag-green">APPROVED</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S6-reviewer-money-transfer.md">→ View S6 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S7 Security -->
+      <div class="phase-card">
+        <div class="phase-icon warn" style="background:#450a0a;">🔒</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S7 — SECURITY</span>
+            <span class="gate gate-warn">⚠️ Pass w/ conditions</span>
+          </div>
+          <div class="phase-agent">banking-security</div>
+          <div class="phase-desc">STRIDE threat model per endpoint, OWASP Top 10 table, PCI-DSS scope (OUT), PDPA/GDPR review, banking hard rules check (10/11 pass)</div>
+          <div class="phase-tags">
+            <span class="tag tag-green">0 critical</span>
+            <span class="tag tag-green">0 high</span>
+            <span class="tag tag-orange">3 medium</span>
+            <span class="tag tag-blue">7 low</span>
+            <span class="tag tag-green">APPROVED</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S7-security-money-transfer.md">→ View S7 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S8 QA -->
+      <div class="phase-card">
+        <div class="phase-icon warn" style="background:#064e3b;">🧪</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S8 — TESTING</span>
+            <span class="gate gate-warn">⚠️ Pass w/ conditions</span>
+          </div>
+          <div class="phase-agent">banking-qa</div>
+          <div class="phase-desc">Ran actual mvn test, verified JaCoCo thresholds, wrote integration tests (Testcontainers), filed 2 bugs back to backend-dev</div>
+          <div class="phase-tags">
+            <span class="tag tag-green">40/40 unit pass</span>
+            <span class="tag tag-green">Money 98%</span>
+            <span class="tag tag-green">Transfer 95.2%</span>
+            <span class="tag tag-orange">2 bugs filed</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S8-qa-money-transfer.md">→ View S8 artifact summary</a>
+        </div>
+      </div>
+
+      <!-- S9 DevOps -->
+      <div class="phase-card">
+        <div class="phase-icon pass" style="background:#0c2a3e;">🚀</div>
+        <div class="phase-body">
+          <div class="phase-header">
+            <span class="phase-name">S9 — DEPLOYMENT</span>
+            <span class="gate gate-pass">✅ Pass (v1 scaffold)</span>
+          </div>
+          <div class="phase-agent">banking-devops</div>
+          <div class="phase-desc">Multi-stage Dockerfile, 9-template Helm chart, 10-panel Grafana dashboard, 11-stage CI/CD pipeline. Docker build + HTTP 200 smoke test.</div>
+          <div class="phase-tags">
+            <span class="tag tag-cyan">Docker HTTP 200 ✅</span>
+            <span class="tag tag-cyan">Helm chart</span>
+            <span class="tag tag-cyan">Grafana dashboard</span>
+            <span class="tag tag-cyan">CI/CD pipeline</span>
+          </div>
+          <a class="phase-link" href="../artifacts/S9-devops-money-transfer.md">→ View S9 artifact summary</a>
+        </div>
+      </div>
+
+    </div><!-- /phase-chain -->
+  </div><!-- /timeline-section -->
+
+  <!-- ─── Sidebar ─── -->
+  <div class="sidebar">
+
+    <!-- Navigation -->
+    <div class="sidebar-card">
+      <h3>Quick Links</h3>
+      <div class="nav-item"><span class="icon">📋</span><a href="DEMO-SCRIPT.md">10-min presenter script</a></div>
+      <div class="nav-item"><span class="icon">⚡</span><a href="../QUICKSTART.md">5-min quickstart guide</a></div>
+      <div class="nav-item"><span class="icon">📊</span><a href="../agents-comms/dashboard.md">Live phase board</a></div>
+      <div class="nav-item"><span class="icon">🕐</span><a href="../agents-comms/timeline.md">Handoff timeline</a></div>
+      <div class="nav-item"><span class="icon">📐</span><a href="../agents-comms/decisions-log.md">16 ADRs</a></div>
+      <div class="nav-item"><span class="icon">🔗</span><a href="sequence-diagram.md">Sequence diagram (Mermaid)</a></div>
+      <div class="nav-item"><span class="icon">✅</span><a href="../artifacts/FINAL-DOD-money-transfer-v1.md">Final DoD checklist</a></div>
+      <div class="nav-item"><span class="icon">⚠️</span><a href="../agents-comms/open-issues.md">Open issues (US-006)</a></div>
+    </div>
+
+    <!-- Banking Hard Gates -->
+    <div class="sidebar-card">
+      <h3>Banking Hard Gates</h3>
+      <div class="gate-row"><span class="gate-icon">✅</span> No PII/card data in logs</div>
+      <div class="gate-row"><span class="gate-icon">✅</span> Idempotency-Key on POST /transfers</div>
+      <div class="gate-row"><span class="gate-icon">✅</span> Audit trail (outbox in same tx)</div>
+      <div class="gate-row"><span class="gate-icon">✅</span> Reversible Flyway migrations</div>
+      <div class="gate-row"><span class="gate-icon">⚠️</span> No hardcoded secrets (DB_PASSWORD YAML default — low, tracked)</div>
+    </div>
+
+    <!-- Tech Stack -->
+    <div class="sidebar-card">
+      <h3>Tech Stack</h3>
+      <div class="stack-item"><span>Language</span><span class="stack-val">Java 21</span></div>
+      <div class="stack-item"><span>Framework</span><span class="stack-val">Spring Boot 3.x</span></div>
+      <div class="stack-item"><span>Architecture</span><span class="stack-val">Hexagonal</span></div>
+      <div class="stack-item"><span>Database</span><span class="stack-val">PostgreSQL + Flyway</span></div>
+      <div class="stack-item"><span>Messaging</span><span class="stack-val">Kafka (Outbox)</span></div>
+      <div class="stack-item"><span>Testing</span><span class="stack-val">JUnit5 + Testcontainers</span></div>
+      <div class="stack-item"><span>Observability</span><span class="stack-val">OTel + Prometheus</span></div>
+      <div class="stack-item"><span>CI/CD</span><span class="stack-val">GitHub Actions</span></div>
+    </div>
+
+    <!-- Agent Skills -->
+    <div class="sidebar-card">
+      <h3>Skill Packs (9)</h3>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> spring-boot-banking</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> banking-security-patterns</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> kafka-spring-patterns</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> resilience4j-patterns</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> banking-test-automation</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> code-review-checklists</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> banking-devops-platform</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> openapi-flyway-standards</div>
+      <div class="nav-item" style="font-size:11px;"><span class="icon">📦</span> angular-banking-ui</div>
+    </div>
+
+    <!-- Staging Blockers -->
+    <div class="sidebar-card">
+      <h3>Staging Blockers (US-006)</h3>
+      <div class="gate-row"><span class="gate-icon">🔴</span> Activate JWT in SecurityConfig</div>
+      <div class="gate-row"><span class="gate-icon">🔴</span> Remove STUB_CUSTOMER_ID</div>
+      <div class="gate-row"><span class="gate-icon">🔴</span> @Profile guard on AccountClientStub</div>
+      <div class="gate-row"><span class="gate-icon">🟡</span> MDC.clear() ServletFilter</div>
+      <div class="gate-row"><span class="gate-icon">🟡</span> Micrometer tracing + traceparent</div>
+    </div>
+
+  </div><!-- /sidebar -->
+</div><!-- /main -->
+
+<div class="footer">
+  Banking SDLC AI Demo · Money Transfer v1 · Built entirely by AI agents on 2026-05-18 ·
+  <a href="../../README.md">README</a> ·
+  <a href="../agents-comms/dashboard.md">Dashboard</a> ·
+  <a href="../artifacts/FINAL-DOD-money-transfer-v1.md">DoD Checklist</a>
+</div>
+
+</body>
+</html>

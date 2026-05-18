@@ -49,14 +49,28 @@ Envelope must conform to [handoff-schema.md](../../docs/architecture/handoff-sch
 
 ## Before You Code (mandatory reads)
 
-Subagent context does **not** auto-load skills. Read these references before starting any implementation work:
+Subagent context does **not** auto-load skills. Read the **Tier-1 core skills** before starting any implementation work. Read **Tier-2 specialist skills** only when the task touches their domain (e.g., don't load `java-migration` unless you're upgrading).
 
-1. **Skill**: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) — coding standards, testing policy, API conventions inline; deep refs for hexagonal, JPA/Flyway, idempotency+saga+outbox, observability, anti-patterns
+### Tier 1 — Read every task
+
+1. **Skill**: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) — coding standards, testing policy, API conventions; deep refs for hexagonal, JPA/Flyway, idempotency+saga+outbox, observability, anti-patterns
 2. **Skill**: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md) — STRIDE, OWASP Top 10, banking hard rules, PCI/GDPR compliance
 3. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — module layout, naming conventions
 4. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope shape for your output
 
-Read `references/*.md` from the skill folder on demand based on the task (e.g., `references/idempotency-saga-outbox.md` when wiring up a financial endpoint).
+### Tier 2 — Read when the task touches that domain
+
+| Task trigger | Skill |
+|---|---|
+| Adding `@KafkaListener` / `KafkaTemplate` / outbox dispatcher / DLQ / Schema Registry | [`kafka-spring-patterns`](../skills/kafka-spring-patterns/SKILL.md) |
+| Adding any external HTTP/Kafka/DB call that crosses a service boundary (CircuitBreaker, Retry, TimeLimiter, Bulkhead, RateLimiter, fallback) | [`resilience4j-patterns`](../skills/resilience4j-patterns/SKILL.md) |
+| Enabling virtual threads, touching `@Async`/`@Scheduled`, parallel fan-out, or changing HikariCP sizing | [`concurrency-virtual-threads`](../skills/concurrency-virtual-threads/SKILL.md) |
+| Investigating slow boot, configuring AOT/CDS, evaluating GraalVM native image | [`spring-startup-optimizer`](../skills/spring-startup-optimizer/SKILL.md) |
+| Planning/executing a JDK upgrade, Spring Boot major upgrade, or major lib bump | [`java-migration`](../skills/java-migration/SKILL.md) |
+| Adding/bumping a dependency, triaging a CVE alert, generating an SBOM | [`dependency-auditor`](../skills/dependency-auditor/SKILL.md) |
+| Investigating p99 regression, GC pressure, connection-pool saturation, or before/after a perf-sensitive change | [`spring-performance-tuning`](../skills/spring-performance-tuning/SKILL.md) |
+
+Read `references/*.md` from the skill folder on demand based on the specific sub-task (e.g., `references/idempotency-saga-outbox.md` when wiring a financial endpoint, `references/outbox-dispatcher.md` when implementing event publishing, `references/circuit-breaker.md` when adding an HTTP client, `references/hikaricp-tuning.md` when sizing the DB pool).
 
 ---
 
@@ -131,7 +145,20 @@ Read `references/*.md` from the skill folder on demand based on the task (e.g., 
 
 ## Reference
 
+Core skills:
 - Skill: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md)
+- Skill: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md)
+
+Specialist skills (read on demand):
+- Skill: [`kafka-spring-patterns`](../skills/kafka-spring-patterns/SKILL.md) — event-driven (producers, consumers, outbox, schema)
+- Skill: [`resilience4j-patterns`](../skills/resilience4j-patterns/SKILL.md) — CircuitBreaker / Retry / TimeLimiter / Bulkhead / RateLimiter
+- Skill: [`concurrency-virtual-threads`](../skills/concurrency-virtual-threads/SKILL.md) — Java 21 VTs, pinning traps, JDBC/HikariCP shifts
+- Skill: [`spring-startup-optimizer`](../skills/spring-startup-optimizer/SKILL.md) — AOT, CDS, lazy init, GraalVM native
+- Skill: [`java-migration`](../skills/java-migration/SKILL.md) — JDK + Spring Boot LTS upgrade playbook
+- Skill: [`dependency-auditor`](../skills/dependency-auditor/SKILL.md) — OWASP DC, SBOM, license, banned deps
+- Skill: [`spring-performance-tuning`](../skills/spring-performance-tuning/SKILL.md) — Hikari + Tomcat + JVM/GC + profiling
+
+Project docs:
 - [System Overview](../../docs/architecture/overview.md)
 - [Project Structure](../../docs/architecture/project-structure.md)
 - [Handoff Schema](../../docs/architecture/handoff-schema.md)
