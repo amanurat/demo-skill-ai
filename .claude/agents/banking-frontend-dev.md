@@ -48,69 +48,13 @@ Handoff artifact to `banking-reviewer`:
 7. Internationalization (i18n) — Thai + English
 8. Unit + E2E tests (Jest / Cypress / Playwright)
 
-## Best Practices
+## Before You Code (mandatory reads)
 
-### Architecture
-- **Standalone components** + lazy-loaded routes
-- **Feature libraries** (`libs/feature-transfer`) per business area
-- **Smart vs presentational** components separated
-- **Signals** for local state; **NgRx** only when cross-cutting
+Subagent context does not auto-load skills. Read these before starting any implementation work:
 
-### Forms (Banking-Specific)
-- **Reactive Forms** with strong types
-- **Validators** for: amount > 0, account number format, daily limit hint
-- **Idempotency-Key** generated client-side (UUID v4) when form opens
-- **Optimistic UI** is **forbidden** for money operations — wait for server confirmation
-- **Confirmation step** for irreversible actions (transfer, payment)
-- **Mask sensitive input** (account numbers after focus)
-
-### API Integration
-- **HttpClient** with interceptors:
-  - Auth (JWT)
-  - Correlation ID (`X-Request-Id`)
-  - Idempotency-Key on POST/PUT for financial ops
-  - Error → user-friendly message + log
-- **Retry** with Resilience policy (3 attempts, exponential backoff) only for idempotent calls
-
-### Error UX
-- Map server `Problem-Detail` → human messages (i18n keys)
-- Show **specific** errors (`INSUFFICIENT_FUNDS`) not generic ("Something went wrong")
-- Distinguish: validation (inline), business (alert), system (retry banner)
-
-### Accessibility
-- Semantic HTML (`<button>` not clickable `<div>`)
-- ARIA roles + labels
-- Focus management on dialogs
-- Color contrast ≥ 4.5:1
-- Keyboard navigation tested
-- `axe-core` in CI
-
-### Performance
-- Lazy-load feature modules
-- `OnPush` change detection
-- Image optimization (NgOptimizedImage)
-- Bundle budget enforced in `angular.json`
-- Lighthouse perf ≥ 90 on key pages
-
-### Security
-- No secrets / API keys in code
-- `Content-Security-Policy` headers (configured at gateway)
-- JWT in httpOnly cookie (preferred) or memory; **never localStorage** for sensitive tokens
-- Input sanitization for any HTML rendering
-- XSS-safe by default (Angular auto-escapes — don't bypass with `bypassSecurityTrust*`)
-
-## ❌ Anti-Patterns
-
-- `any` in TypeScript
-- Manual HTTP calls bypassing the generated client
-- Optimistic UI for money transactions
-- Storing JWT in `localStorage`
-- Inline styles / inline event handlers
-- Mixing template-driven and reactive forms in same feature
-- Clickable `<div>`s
-- Hardcoded strings (use i18n)
-- Forgetting loading + error states
-- Skipping a11y "to ship faster"
+1. **Skill**: [`angular-banking-ui`](../skills/angular-banking-ui/SKILL.md) — forms, API integration, a11y, i18n, anti-patterns (read SKILL.md + relevant references/ on-demand)
+2. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — frontend workspace layout, naming
+3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
 ## Decision Rules
 
@@ -135,6 +79,7 @@ Handoff artifact to `banking-reviewer`:
 
 ## Reference
 
+- Skill: [`angular-banking-ui`](../skills/angular-banking-ui/SKILL.md)
 - [System Overview](../../docs/architecture/overview.md)
 - [Project Structure (Frontend)](../../docs/architecture/project-structure.md)
 - [Handoff Schema](../../docs/architecture/handoff-schema.md)

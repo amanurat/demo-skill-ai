@@ -1,0 +1,127 @@
+# =============================================================================
+# NetworkPolicy — transfer-service
+# Implements least-privilege egress allow-list (Security ITEM-9)
+# PDPA data residency: pods confined to Thailand-region nodes via topology
+# constraints in values.yaml; NetworkPolicy gates inter-service comms.
+#
+# Ingress allowed:
+#   - Ingress controller (port 8080)
+#   - Prometheus scrape (port 9090, management) — restricted to Prometheus pods
+#
+# Egress allowed:
+#   - PostgreSQL (port 5432)
+#   - Kafka brokers (port 9092) — commented out until US-007
+#   - OTel collector (port 4317 gRPC, port 4318 HTTP)
+#   - DNS (port 53 UDP/TCP) — required for service discovery
+#   - account-service (port 8080) — for AccountClient (US-006)
+#
+# All other egress is DENIED by default.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "transfer-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "transfer-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "transfer-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ---------------------------------------------------------------------------
+  # Ingress rules
+  # ---------------------------------------------------------------------------
+  ingress:
+    # Allow traffic from the ingress controller namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus scrape on management port only
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow other banking services to call this service (e.g., API gateway)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              banking.example.com/env: staging
+
+  # ---------------------------------------------------------------------------
+  # Egress rules (allow-list)
+  # ---------------------------------------------------------------------------
+  egress:
+    # DNS — required for all service discovery
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # PostgreSQL — transfer-service primary database
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app: transfer-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # OpenTelemetry Collector — traces and metrics export
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317    # gRPC OTLP
+        - protocol: TCP
+          port: 4318    # HTTP OTLP
+
+    # account-service — AccountClient (wired in US-006; policy pre-provisioned)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              banking.example.com/env: staging
+          podSelector:
+            matchLabels:
+              app: account-service
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Kafka brokers — COMMENTED OUT until US-007 (outbox relay)
+    # - to:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           kubernetes.io/metadata.name: kafka
+    #       podSelector:
+    #         matchLabels:
+    #           app.kubernetes.io/name: kafka
+    #   ports:
+    #     - protocol: TCP
+    #       port: 9092

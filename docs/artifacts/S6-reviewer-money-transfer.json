@@ -1,0 +1,225 @@
+{
+  "artifact_id": "9e2c4a8b-5f31-4d72-b3a1-7e6c0d9f4b21",
+  "from_agent": "banking-reviewer",
+  "to_agent": "banking-security",
+  "phase": "REVIEW",
+  "feature": "money-transfer",
+  "payload": {
+    "verdict": "approved",
+    "summary": "Solid v1 scaffold. Hexagonal layering is respected, the Transfer domain enforces invariants in the aggregate (not the service), Money uses BigDecimal with NUMERIC(19,4) and compareTo-based equality, idempotency follows ADR-013 (SHA-256 key hash + payload checksum + 24h TTL + 409 on conflict), and outbox writes occur in the same @Transactional as the business write with no direct kafkaTemplate.send. Approving to proceed to security review, but several majors must be addressed before US-006 lands a real account-service (notably the AccountClientStub being indistinguishable from a production bean, double-DB-lookup in the JPA adapter, and missing OpenTelemetry/MDC traceId wiring).",
+    "comments": [
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/client/AccountClientStub.java",
+        "line": 22,
+        "severity": "major",
+        "rule": "anti-pattern: silent-stub-in-production",
+        "message": "AccountClientStub is annotated @Component with no profile guard. It will be auto-wired in production as well, returning a canned 10M THB ACTIVE account regardless of input. This is a money-safety hazard the moment SecurityConfig is hardened (US-006). The fact that it is a stub must be impossible to miss at deployment time.",
+        "suggested_fix": "Add @Profile(\"!prod\") or @ConditionalOnMissingBean(AccountClient.class) plus a @ConditionalOnProperty(\"transfer.account-client.stub.enabled=true\") guard. Log a WARN at startup (\"AccountClient STUB enabled — DO NOT use in production\") and fail the readiness probe if profile=prod and no real adapter is present."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/persistence/TransferRepositoryAdapter.java",
+        "line": 51,
+        "severity": "major",
+        "rule": "performance: redundant-select-before-save",
+        "message": "Every save() does jpaRepository.findById(transferId) first just to preserve createdAt. On the hot path createTransfer does this twice per request (insert PENDING + update FINAL). For a financial endpoint with p95<1s SLA this is two extra SELECTs in the critical-path transaction.",
+        "suggested_fix": "Set createdAt in the domain factory or via a JPA @PrePersist using a separate listener. Alternative: use a Hibernate @Generated/@CreationTimestamp column, or use EntityManager.merge() with a populated entity that already carries createdAt from the domain object. Removes one round-trip per save."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/usecase/CreateTransferUseCase.java",
+        "line": 107,
+        "severity": "major",
+        "rule": "observability: missing-otel-spans-and-metrics",
+        "message": "There are no OpenTelemetry @WithSpan annotations, no Micrometer Counter/Timer for transfer.attempts / transfer.completed / transfer.failed / idempotency.hits, and no Sampler bias on this hot path. NFR requires Prometheus + OTel; logger.info string concat is the only instrumentation. This is critical for SLO measurement (p95<1s, p99<3s).",
+        "suggested_fix": "Add @Observed or @WithSpan on execute() and findById(); inject MeterRegistry and emit Counter(\"transfer.requests\", Tags.of(\"result\", status.name())) and Timer.builder(\"transfer.duration\"). Add a sampler hint via OTel context. Wire a Sleuth/Micrometer baggage entry for correlationId so MDC.traceId is populated (used by ProblemDetailExceptionHandler line 79)."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/interfaces/rest/TransferController.java",
+        "line": 58,
+        "severity": "major",
+        "rule": "security: hardcoded-customer-id",
+        "message": "STUB_CUSTOMER_ID hardcoded UUID is used as the authenticated principal for every request, bypassing the JWT subject claim entirely. Combined with SecurityConfig.permitAll on most paths, the @PreAuthorize(\"isAuthenticated()\") on the use case is the only nominal guard. This is acceptable for v1 ONLY because no production endpoint is exposed; it MUST be removed before US-006 deploys. The hardcoded UUID also means findById ownership checks effectively pass for all callers.",
+        "suggested_fix": "Add an Authentication parameter (Spring will inject it from SecurityContext) and extract sub claim via Jwt.getSubject(). Throw 401 if absent. Until US-006, gate this controller with @Profile(\"!prod\") or fail-fast on missing JWT issuer config so the service refuses to start in prod with the stub principal."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/usecase/CreateTransferUseCase.java",
+        "line": 130,
+        "severity": "major",
+        "rule": "best-practice: double-call-to-account-client",
+        "message": "AccountClient.getAccountInfo(sourceAccountId) is called once at line 130 (ownership check) and then a second time inside TransferSaga.execute() at line 69 of TransferSaga. With a real Resilience4j-decorated client this doubles the latency budget (2 x 800ms time-limiter) and burns 2 calls of the bulkhead per transfer. The two calls are not atomically consistent either — balance may change between them.",
+        "suggested_fix": "Fetch once in the use case, pass AccountInfo into TransferSaga.execute(transfer, sourceAccountInfo, destinationAccountInfo). Or remove the use-case ownership call entirely and rely on saga step 1 which already validates."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/domain/model/Transfer.java",
+        "line": 21,
+        "severity": "minor",
+        "rule": "best-practice: mutable-aggregate-field",
+        "message": "referenceNumber dropped its final modifier and is now mutated by assignReferenceNumber. The dev artifact notes this was a bug fix, which is correct, but the assign-once protocol leaks across two transactions in the current call sequence (create -> assignReferenceNumber happens BEFORE first save, line 146 of use case). Since the reference is generated client-side from the UUID (deterministic), there is no real need for a two-phase assignment.",
+        "suggested_fix": "Move generateReferenceNumber() into Transfer.create() as a deterministic derivation of transferId and revert the field to final. Removes the assignReferenceNumber() side effect entirely and restores immutability. Keep DB UNIQUE constraint as backstop."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/usecase/CreateTransferUseCase.java",
+        "line": 218,
+        "severity": "minor",
+        "rule": "best-practice: jackson-record-order-not-guaranteed-cross-jvm",
+        "message": "canonicalize() relies on Jackson serializing a local record's fields in declaration order. This is true for Jackson but is not a documented JLS guarantee. If a future JDK reflectively reorders record components, idempotency replays could miss-match silently, allowing duplicate transfers.",
+        "suggested_fix": "Either (a) annotate @JsonPropertyOrder on the Canonical record explicitly listing the field order, or (b) build a TreeMap<String,String> of fields and serialize that. Belt-and-suspenders for a financial checksum."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/usecase/CreateTransferUseCase.java",
+        "line": 249,
+        "severity": "minor",
+        "rule": "best-practice: implicit-timezone-in-reference-number",
+        "message": "generateReferenceNumber uses Asia/Bangkok local date. This is fine for THB ops, but a transfer initiated at 23:59 Bangkok time on day N and persisted at 00:01 day N+1 UTC will display a YYYYMMDD that disagrees with the createdAt UTC timestamp — operationally confusing during reconciliation.",
+        "suggested_fix": "Document the timezone choice in the OpenAPI description for referenceNumber, or always render in UTC. Either way add a unit test that pins LocalDate to a known instant via java.time.Clock injection."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/persistence/TransferJpaEntity.java",
+        "line": 32,
+        "severity": "minor",
+        "rule": "anti-pattern: lombok-data-on-jpa-entity",
+        "message": "@Getter + @Setter on a JPA entity is common but means the entity has no encapsulation — any caller can mutate state outside the aggregate boundary. Acceptable because no caller outside the adapter touches this class, but flag for future hardening.",
+        "suggested_fix": "Tighten by @Setter(AccessLevel.PACKAGE) so only the adapter can mutate, or convert to a JDK record with @Embeddable-style mapping. Lower priority since the adapter is the only consumer."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/saga/TransferSaga.java",
+        "line": 120,
+        "severity": "minor",
+        "rule": "best-practice: unused-AccountFrozenException-catch",
+        "message": "The catch (AccountFrozenException) branch on line 123 is unreachable in the current code path: nothing inside execute() throws AccountFrozenException — the FROZEN checks at lines 73 and 99 use isFrozen() and call markFailed() directly. Dead code is a confusing maintenance hazard.",
+        "suggested_fix": "Either remove the catch block, or refactor the isFrozen() branches to throw AccountFrozenException and centralize the markFailed+publish call in the catch."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/persistence/IdempotencyRepositoryAdapter.java",
+        "line": 70,
+        "severity": "minor",
+        "rule": "performance: redundant-findById-on-update",
+        "message": "updateResult does findById -> setter -> save. With the composite PK already known, a JPQL UPDATE … WHERE keyHash=? AND ownerCustomerId=? avoids one round-trip and one entity load. Same hot-path argument as TransferRepositoryAdapter.",
+        "suggested_fix": "Add @Modifying @Query(\"UPDATE IdempotencyJpaEntity e SET e.transferId=?3, e.resultStatus=?4, e.cachedResponseCode=?5, e.cachedResponseBody=?6 WHERE e.keyHash=?1 AND e.ownerCustomerId=?2\") in IdempotencyJpaRepository."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/interfaces/rest/ProblemDetailExceptionHandler.java",
+        "line": 79,
+        "severity": "minor",
+        "rule": "observability: traceId-mdc-key-never-populated",
+        "message": "MDC.get(\"traceId\") is read but nothing in the codebase ever does MDC.put(\"traceId\", ...). The controller populates only \"correlationId\" and \"idempotencyKeyPrefix\". So traceId is always null in the Problem-Detail response, defeating cross-service correlation.",
+        "suggested_fix": "Either change the key to \"correlationId\" (which IS populated) or add a ServletFilter / Micrometer-tracing baggage propagator that maps the W3C traceparent header into MDC.traceId before request handlers run."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/interfaces/rest/TransferController.java",
+        "line": 90,
+        "severity": "minor",
+        "rule": "observability: mdc-leak-on-exception",
+        "message": "MDC.put is done but there is no try/finally MDC.clear(). On a thread-pool reuse pattern this leaks correlationId and idempotencyKeyPrefix into the next, unrelated request handled by the same thread — leading to misleading logs.",
+        "suggested_fix": "Wrap the body in try { ... } finally { MDC.remove(\"correlationId\"); MDC.remove(\"idempotencyKeyPrefix\"); } — or better, install a MdcServletFilter that clears MDC at the end of every request."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/config/SecurityConfig.java",
+        "line": 60,
+        "severity": "minor",
+        "rule": "security: deferred-jwt-permits-all-in-scaffold",
+        "message": "anyRequest().authenticated() is configured but http.oauth2ResourceServer(jwt) is commented out, so the security filter chain has nothing to validate against. With CSRF disabled and STATELESS sessions, every request is rejected as anonymous in dev unless @WithMockUser tests bypass it — which is OK for v1, but the comment-out approach is fragile (easy to forget to flip on at deploy). Already declared as a known limitation, accepted for v1.",
+        "suggested_fix": "Use spring.security.oauth2.resourceserver.jwt.issuer-uri property; in the absence of that property, throw a startup failure (a @ConditionalOnExpression bean) so prod cannot boot without an issuer configured. Acceptable as-is for v1."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/infrastructure/persistence/OutboxEventPublisher.java",
+        "line": 73,
+        "severity": "minor",
+        "rule": "best-practice: empty-headers-string",
+        "message": "headers is hardcoded to \"{}\". Even in v1, W3C traceparent and correlationId belong as Kafka headers (relay will copy from this field). Setting it empty means the future relay loses tracing context.",
+        "suggested_fix": "Build a small Map with at minimum {\"correlationId\": transfer.getCorrelationId(), \"traceparent\": MDC.get(\"traceparent\")} and serialize that. Adds zero perf cost and unlocks downstream correlation when the relay ships."
+      },
+      {
+        "file": "backend/transfer-service/src/main/resources/application.yml",
+        "line": 14,
+        "severity": "minor",
+        "rule": "security: db-password-default-in-yaml",
+        "message": "${DB_PASSWORD:transfer_pass} provides a default password baked into the YAML. If env var is missing in any environment, the service will silently start with a known credential. Acceptable for local dev but should not ship to prod.",
+        "suggested_fix": "Drop the default, i.e. ${DB_PASSWORD}, so missing env var causes startup failure in prod. Keep defaults only in application-local.yml. Document in README."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/usecase/CreateTransferUseCase.java",
+        "line": 137,
+        "severity": "minor",
+        "rule": "correctness: initiatorUserId-equals-customerId-stub",
+        "message": "command.customerId() is passed both as initiatorUserId AND initiatorCustomerId. This is documented as a v1 stub, but the audit trail in the transfers table is silently wrong (two different domain concepts collapsed into one). Could mislead a fraud investigation if v1 data is ever migrated.",
+        "suggested_fix": "Add initiatorUserId as a distinct command field even in v1; populate it from JWT sub claim and customerId from a separate claim (customer_id). Note in README that production deployment depends on this."
+      },
+      {
+        "file": "backend/transfer-service/src/test/java/com/bank/transfer/interfaces/rest/TransferControllerIT.java",
+        "line": 86,
+        "severity": "minor",
+        "rule": "test-quality: deleteAll-instead-of-truncate",
+        "message": "@BeforeEach uses deleteAll on three tables. With foreign keys present (idempotency -> transfers, outbox unaffected), order must be exactly maintained. Better to TRUNCATE … CASCADE for isolation guarantees and performance.",
+        "suggested_fix": "Use a @Sql script with TRUNCATE transfers, transfer_idempotency, transfer_outbox CASCADE — atomic and faster than three deleteAll calls."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/saga/TransferSaga.java",
+        "line": 63,
+        "severity": "nit",
+        "rule": "documentation: stub-disclaimer-in-logs",
+        "message": "saga.step=DEBITED logs \"[stub: no real account-service call in v1]\" inside the message string. Operators tailing prod logs (post-US-006 when stub is gone) may still see this in their grep history. Better to gate behind a feature flag log or remove when real adapter lands.",
+        "suggested_fix": "Move the disclaimer to a one-time startup log in AccountClientStub, not per-request in saga."
+      },
+      {
+        "file": "backend/transfer-service/pom.xml",
+        "line": 152,
+        "severity": "nit",
+        "rule": "build: env-specific-version-pin",
+        "message": "junit-platform-launcher 1.10.5 and surefire 3.5.4 pinned solely because of a corporate Maven mirror cache gap. Dev's own implementation_notes explicitly says to revert. Make this trivially reversible.",
+        "suggested_fix": "Add a TODO comment with a ticket id pointing to the cleanup task; or move pins into a profile activated by -Doffline-cache, so the default build doesn't carry them."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/application/port/in/TransferResult.java",
+        "line": 32,
+        "severity": "nit",
+        "rule": "best-practice: bigdecimal-on-wire-is-via-mapper",
+        "message": "TransferResult.amount is BigDecimal but it is serialized to string only at the boundary (TransferMapper). If a future consumer accidentally returns TransferResult directly from a controller (or logs result.toString), the BigDecimal will serialize as a JSON number, losing precision. Add a Jackson @JsonSerialize(using=ToStringSerializer.class) for defense-in-depth.",
+        "suggested_fix": "@JsonSerialize(using = ToStringSerializer.class) on the amount component, so even an accidental direct serialization preserves the decimal string."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/domain/model/Money.java",
+        "line": 153,
+        "severity": "nit",
+        "rule": "best-practice: hashCode-uses-stripTrailingZeros",
+        "message": "hashCode uses amount.stripTrailingZeros() while equals uses compareTo. The contract holds, but stripTrailingZeros allocates a new BigDecimal on every hash; could be cached for hot maps.",
+        "suggested_fix": "If Money instances end up as HashMap keys on a hot path, memoize the hash. Otherwise leave."
+      },
+      {
+        "file": "backend/transfer-service/src/main/java/com/bank/transfer/TransferServiceApplication.java",
+        "line": 14,
+        "severity": "nit",
+        "rule": "best-practice: enableScheduling-without-scheduler",
+        "message": "@EnableScheduling is on but there is no @Scheduled method anywhere in v1 (outbox poller is stubbed out). Harmless but reads as dead config.",
+        "suggested_fix": "Either remove @EnableScheduling now and re-add with the outbox relay in US-007, or add a TODO comment pointing to US-007."
+      }
+    ],
+    "metrics_checked": {
+      "coverage": 0.85,
+      "lint": "not_run",
+      "build": "not_run",
+      "files_reviewed": 25,
+      "unit_tests_passing": "40/40 (per dev artifact)",
+      "integration_tests": "6 written, not executed (Docker unavailable)"
+    },
+    "known_limitations_accepted": [
+      "AccountClientStub returns canned 10M THB ACTIVE account — acceptable for US-001/US-003 scaffold; flagged with @Profile/@ConditionalOn guard fix before US-006",
+      "Outbox poller writes rows but no Kafka publisher in v1 — acceptable; rows queryable for relay in US-007",
+      "Saga compensation path defined but not exercised — acceptable for single-write scope; full exercise in US-008",
+      "SecurityConfig defers real JWT validation — acceptable ONLY if service is not exposed externally; must be flipped on before US-006/prod deploy",
+      "Integration tests not executed due to no Docker — acceptable for scaffold; QA must run them in CI",
+      "POM junit/surefire version overrides for offline cache — acceptable as a temporary workaround"
+    ],
+    "known_limitations_concerns": [
+      "AccountClientStub being auto-wired in production with no profile guard is a money-safety hazard the moment SecurityConfig is hardened — must NOT ship to any environment reachable from real users",
+      "STUB_CUSTOMER_ID hardcoded principal in TransferController coupled with permitAll SecurityConfig means the @PreAuthorize is the sole guard, and ownership checks in findById will succeed for any caller as long as transfers were created under the same stub — this combination must be removed atomically with US-006"
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-18T03:42:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "f3a7e2d1-8b4c-4f9e-a6d5-2c1b0e9f8a7d",
+    "notes": "Approved for security review. 0 blockers, 5 majors, 13 minors, 5 nits. All majors are acceptable-for-v1 with explicit guard requirements before US-006. Hexagonal layering, domain richness, Money handling, idempotency protocol, and outbox-in-tx are all correctly implemented per design intent. Tests cover money paths well (>=95% on Money). Stub posture is the dominant theme of findings — the implementation correctness is sound."
+  }
+}

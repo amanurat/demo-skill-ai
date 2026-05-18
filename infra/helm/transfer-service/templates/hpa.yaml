@@ -1,0 +1,50 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "transfer-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "transfer-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "transfer-service.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+  behavior:
+    scaleDown:
+      # Conservative scale-down: wait 5 min stabilization to avoid thrashing
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+    scaleUp:
+      # Aggressive scale-up: respond to traffic spikes quickly
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max
+{{- end }}

@@ -1,0 +1,539 @@
+{
+  "artifact_id": "b5e2d8a4-4f1c-4a7e-9c3b-7d6f1e2a8c34",
+  "from_agent": "banking-solution-architect",
+  "to_agent": "banking-tech-lead",
+  "phase": "PLANNING",
+  "feature": "money-transfer",
+  "payload": {
+    "services": [
+      {
+        "name": "api-gateway",
+        "responsibility": "Edge routing, JWT validation (RS256), rate limiting (60 req/min per customer, token bucket), TLS termination, request correlation_id injection. Forwards to downstream services via service mesh DNS.",
+        "bounded_context": "Edge",
+        "owns_data": [],
+        "consumes_events": [],
+        "produces_events": []
+      },
+      {
+        "name": "identity-service",
+        "responsibility": "OAuth2/OIDC authorization server. Issues access tokens (15-min TTL) and refresh tokens. Owns user identity and authentication state. Does NOT own customer profile data (that lives in account-service).",
+        "bounded_context": "IAM",
+        "owns_data": ["users", "oauth_clients", "refresh_tokens", "user_consents"],
+        "consumes_events": [],
+        "produces_events": ["UserAuthenticated", "UserSessionRevoked"]
+      },
+      {
+        "name": "account-service",
+        "responsibility": "Account aggregate root: CRUD, balance management (available_balance, ledger_balance), holds/reserves, status (ACTIVE/FROZEN/INACTIVE/CLOSED), customer tier + per-tx / daily limit configuration, account lookup (masked name resolution for payee verification). Exposes idempotent debit/credit/hold/release operations called by transfer-service saga steps. Uses optimistic locking on balance updates to prevent double-debit (US-007).",
+        "bounded_context": "Accounts",
+        "owns_data": ["accounts", "account_holds", "customer_tiers", "tier_limits", "account_status_history"],
+        "consumes_events": ["TransferCompleted", "TransferCompensated"],
+        "produces_events": ["AccountDebited", "AccountCredited", "AccountHoldPlaced", "AccountHoldReleased", "AccountStatusChanged"]
+      },
+      {
+        "name": "payee-service",
+        "responsibility": "Customer's saved payee list (per US-010): add, list, soft-delete, duplicate detection. Does NOT own the underlying account data (calls account-service for lookup and revalidation at transfer time). Separated from account-service because (a) payee list is a per-customer view, (b) account-service is on the critical synchronous transfer path and should not carry payee CRUD load, (c) different scaling profile (payee CRUD is low-TPS).",
+        "bounded_context": "Payments",
+        "owns_data": ["payees", "payee_lookup_failures"],
+        "consumes_events": ["AccountStatusChanged"],
+        "produces_events": ["PayeeAdded", "PayeeRemoved", "PayeeLookupFailed"]
+      },
+      {
+        "name": "transfer-service",
+        "responsibility": "Money transfer Saga orchestrator (intra-bank, THB). Owns the transfer aggregate and saga state machine. Handles idempotency (per-service table, US-003), per-tx + daily limit checks (US-004, US-005), orchestrates account-service debit + credit, triggers compensation on credit failure (US-008), publishes lifecycle events via transactional outbox. Owns the DailyTransferAccumulator (per-account, per-Bangkok-day) used for both daily limit enforcement and AML threshold detection (US-009).",
+        "bounded_context": "Payments",
+        "owns_data": [
+          "transfers",
+          "transfer_idempotency",
+          "daily_transfer_accumulator",
+          "saga_state",
+          "transfer_outbox"
+        ],
+        "consumes_events": ["AccountDebited", "AccountCredited"],
+        "produces_events": [
+          "TransferRequested",
+          "TransferCompleted",
+          "TransferFailed",
+          "TransferCompensated",
+          "AmlThresholdBreached"
+        ]
+      },
+      {
+        "name": "ledger-service",
+        "responsibility": "Double-entry bookkeeping. Append-only journal of debits and credits with strict balance invariants. Consumed by transfer-service for atomic journal recording during saga steps. Source of truth for end-of-day reconciliation. Separate from account-service because the ledger is the immutable record-of-truth while account balances are a materialized projection.",
+        "bounded_context": "Ledger",
+        "owns_data": ["journal_entries", "journal_postings", "reconciliation_snapshots"],
+        "consumes_events": ["AccountDebited", "AccountCredited"],
+        "produces_events": ["JournalEntryPosted", "ReconciliationCompleted"]
+      },
+      {
+        "name": "audit-service",
+        "responsibility": "Append-only, immutable audit log for all financial state changes (US-001..US-009 ACs). Consumes ALL domain events and persists with 7-year retention (BoT). Provides query API for compliance and Ops. Time-partitioned by date for cost-efficient archival. UPDATE/DELETE physically blocked at database role level.",
+        "bounded_context": "Compliance",
+        "owns_data": ["audit_log", "audit_log_archive_index"],
+        "consumes_events": [
+          "TransferRequested",
+          "TransferCompleted",
+          "TransferFailed",
+          "TransferCompensated",
+          "AmlThresholdBreached",
+          "AccountDebited",
+          "AccountCredited",
+          "AccountStatusChanged",
+          "PayeeAdded",
+          "PayeeRemoved",
+          "PayeeLookupFailed",
+          "UserAuthenticated"
+        ],
+        "produces_events": []
+      },
+      {
+        "name": "notification-service",
+        "responsibility": "Async fan-out of customer notifications via email, SMS, push (US-011). Honors per-channel opt-out (PDPA consent). Retries each channel up to 3 times with exponential backoff; marks dispatch successful if >= 2 of 3 channels deliver per BA AC. Tracks undelivered-rate metric; raises ops alert when daily undelivered exceeds 1%.",
+        "bounded_context": "Notifications",
+        "owns_data": ["notification_dispatch_log", "channel_preferences"],
+        "consumes_events": ["TransferCompleted", "TransferFailed", "TransferCompensated"],
+        "produces_events": ["NotificationDispatched", "NotificationFailed"]
+      },
+      {
+        "name": "compliance-service",
+        "responsibility": "Compliance review queue for AML flags (US-009). Consumes AmlThresholdBreached events, enriches with customer KYC context, persists case for human review, and dispatches notification to compliance team within 60s. Separated from audit-service because compliance has stateful workflow (case status, reviewer assignment) while audit-service is strictly append-only logs.",
+        "bounded_context": "Compliance",
+        "owns_data": ["aml_cases", "case_assignments", "case_review_history"],
+        "consumes_events": ["AmlThresholdBreached"],
+        "produces_events": ["AmlCaseOpened", "AmlCaseResolved"]
+      }
+    ],
+    "events": [
+      {
+        "name": "TransferRequested",
+        "producer": "transfer-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://payments.transfer.v1.TransferRequested",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "TransferCompleted",
+        "producer": "transfer-service",
+        "consumers": ["audit-service", "notification-service", "account-service"],
+        "schema_ref": "avro://payments.transfer.v1.TransferCompleted",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "TransferFailed",
+        "producer": "transfer-service",
+        "consumers": ["audit-service", "notification-service"],
+        "schema_ref": "avro://payments.transfer.v1.TransferFailed",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "TransferCompensated",
+        "producer": "transfer-service",
+        "consumers": ["audit-service", "notification-service", "account-service"],
+        "schema_ref": "avro://payments.transfer.v1.TransferCompensated",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "AmlThresholdBreached",
+        "producer": "transfer-service",
+        "consumers": ["audit-service", "compliance-service"],
+        "schema_ref": "avro://compliance.aml.v1.AmlThresholdBreached",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "AccountDebited",
+        "producer": "account-service",
+        "consumers": ["ledger-service", "audit-service"],
+        "schema_ref": "avro://accounts.account.v1.AccountDebited",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "AccountCredited",
+        "producer": "account-service",
+        "consumers": ["ledger-service", "audit-service"],
+        "schema_ref": "avro://accounts.account.v1.AccountCredited",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "AccountStatusChanged",
+        "producer": "account-service",
+        "consumers": ["audit-service", "payee-service"],
+        "schema_ref": "avro://accounts.account.v1.AccountStatusChanged",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "PayeeAdded",
+        "producer": "payee-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://payments.payee.v1.PayeeAdded",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "PayeeRemoved",
+        "producer": "payee-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://payments.payee.v1.PayeeRemoved",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "PayeeLookupFailed",
+        "producer": "payee-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://payments.payee.v1.PayeeLookupFailed",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "NotificationDispatched",
+        "producer": "notification-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://notifications.dispatch.v1.NotificationDispatched",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "NotificationFailed",
+        "producer": "notification-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://notifications.dispatch.v1.NotificationFailed",
+        "delivery": "at-least-once"
+      },
+      {
+        "name": "AmlCaseOpened",
+        "producer": "compliance-service",
+        "consumers": ["audit-service"],
+        "schema_ref": "avro://compliance.aml.v1.AmlCaseOpened",
+        "delivery": "at-least-once"
+      }
+    ],
+    "decisions": [
+      {
+        "id": "ADR-001",
+        "title": "Saga coordination: orchestration vs choreography",
+        "decision": "Orchestration — transfer-service is the saga coordinator with persisted saga state in its own DB",
+        "rationale": "Money transfer has a strict compensation order (only the debit needs reversal if credit fails; reverse order matters). Orchestration gives a single explicit state machine that is testable and observable. Choreography would scatter the compensation logic across services, making partial-failure recovery harder to reason about. Saga state is persisted in transfer-service.saga_state table to survive pod restarts (US-008 AC4 'survive network partition during saga').",
+        "rejected_options": [
+          {
+            "option": "Choreography (event-driven saga, no central coordinator)",
+            "reason": "Compensation order is hard to enforce; state diagnosis requires reconstructing from events across multiple topics; harder to operate on-call. Saga complexity is small (3 steps) so the decoupling benefit of choreography does not pay for the operational cost."
+          },
+          {
+            "option": "Two-Phase Commit (2PC / XA transactions across services)",
+            "reason": "Synchronous global locks kill p95 < 1s target; PostgreSQL XA support is operationally fragile; violates microservice autonomy."
+          }
+        ]
+      },
+      {
+        "id": "ADR-002",
+        "title": "Idempotency-Key storage strategy: per-service RDBMS table vs shared Redis",
+        "decision": "Per-service table (transfer_idempotency) in transfer-service PostgreSQL with TTL cleanup job; key SHA-256 hashed for PK; 24h expires_at index",
+        "rationale": "Idempotency for financial writes MUST be transactional with the business write (atomic insert of idempotency row + transfer row in same DB transaction). Shared Redis would require a two-phase coordination between Redis and PostgreSQL — a Redis loss between commits would cause double-debits, which is the exact failure mode we are preventing. Each service owns its idempotency keys (no cross-service shared store) preserving bounded-context purity. TTL purge via scheduled job on expires_at index. Idempotency-lib shared library standardizes the pattern across services (account-service, payee-service will reuse).",
+        "rejected_options": [
+          {
+            "option": "Shared Redis cluster with SETNX",
+            "reason": "Not transactional with business DB write; Redis durability (AOF) is weaker than PostgreSQL; loses idempotency-key on Redis restart between SETNX and DB commit; introduces cross-service dependency."
+          },
+          {
+            "option": "Cache-aside in Redis + DB write",
+            "reason": "Same atomicity problem as above; Redis as cache for hot-path read could be added later as a perf optimization, but the source of truth must be the DB."
+          },
+          {
+            "option": "Centralized idempotency-service",
+            "reason": "Adds a synchronous hop to every write path, hurting p95; another service to operate; cross-cutting concern is better handled as a shared library."
+          }
+        ]
+      },
+      {
+        "id": "ADR-003",
+        "title": "Event publishing reliability: transactional outbox vs Debezium CDC",
+        "decision": "Transactional Outbox pattern — write business row + outbox row in same DB transaction; relay process (in-service worker) polls outbox and publishes to Kafka, marking dispatched on Kafka ack",
+        "rationale": "Outbox guarantees exactly the events that correspond to committed state are published (no events for rolled-back transactions, no missing events). It works with the existing PostgreSQL + Kafka stack with no new infrastructure (Debezium requires a connector cluster). Polling worker uses SKIP LOCKED for horizontal scaling. RPO <= 1min is satisfied because outbox + Kafka are both durable. Debezium CDC was considered but adds operational surface (Kafka Connect cluster, schema evolution coordination, replication slot management) that the team does not currently run.",
+        "rejected_options": [
+          {
+            "option": "Debezium CDC on PostgreSQL logical replication",
+            "reason": "Requires Kafka Connect cluster (new ops surface), replication slot management, no clean way to filter only intentional events vs incidental table writes, harder to evolve event schema independently of table schema."
+          },
+          {
+            "option": "Direct publish to Kafka inside the same transaction (XA across DB + Kafka)",
+            "reason": "Kafka does not participate in XA; dual-write inconsistency window allowed."
+          },
+          {
+            "option": "After-commit publish without outbox",
+            "reason": "If the process crashes between commit and publish, the event is lost — violates audit requirements."
+          }
+        ]
+      },
+      {
+        "id": "ADR-004",
+        "title": "Daily transfer accumulator: RDBMS optimistic lock vs Redis atomic increment",
+        "decision": "PostgreSQL row in transfer-service.daily_transfer_accumulator with optimistic lock (version column) updated inside the same DB transaction as the transfer write; failed CAS triggers retry with re-read",
+        "rationale": "The daily accumulator is part of the same business invariant as the transfer (the rejection in US-005 must be atomic with the decision to debit). Putting it in the same DB lets it participate in the same transaction. Optimistic locking is appropriate because real contention per single account is low (a customer rarely fires concurrent transfers). At 500 TPS burst across distinct accounts, lock contention is negligible. Redis INCR was considered for its speed but requires reconciliation with the source-of-truth DB (drift risk) and complicates compensation: if a saga compensates, decrementing Redis is not transactional with the SQL rollback. AML threshold (US-009) uses the same accumulator with a separate aml_threshold_breached boolean flag for dedupe.",
+        "rejected_options": [
+          {
+            "option": "Redis INCR + DB ledger sync at end of day",
+            "reason": "Not transactional with the business decision; drift between Redis and DB; compensation requires manual decrement that can fail leaving inflated counters."
+          },
+          {
+            "option": "Compute on-demand from transfer table (SUM WHERE date = today)",
+            "reason": "Linear scan cost grows with customer's daily transfer count; with peak 500 TPS adds latency to p95 budget; hard to maintain the deduped AML-breach state."
+          },
+          {
+            "option": "Pessimistic SELECT FOR UPDATE on accumulator row",
+            "reason": "Holds row lock for the duration of the saga step; if account-service call slows, locks pile up. Optimistic is safer at this contention level."
+          }
+        ]
+      },
+      {
+        "id": "ADR-005",
+        "title": "AML threshold detection: synchronous check vs asynchronous stream processing",
+        "decision": "Synchronous in-process check during transfer commit; AmlThresholdBreached event emitted via outbox (async) to compliance-service; check is non-blocking to the customer response",
+        "rationale": "The accumulator update is already happening in-transaction (ADR-004), so a 'cumulative_amount >= 2_000_000 AND aml_threshold_breached = false' check during the same write is essentially free (one boolean compare on the row we are already writing). This guarantees exactly-once breach detection per customer per day (the boolean flips inside the same transaction). The event publication via outbox keeps customer-facing latency unchanged (US-009 AC2: 'flag is advisory; customer experience unaffected'). A separate Kafka Streams pipeline was rejected because it would re-aggregate data we already have in the accumulator, with eventual consistency that complicates dedupe.",
+        "rejected_options": [
+          {
+            "option": "Async Kafka Streams windowed aggregation over TransferCompleted events",
+            "reason": "Re-aggregates data already maintained in the accumulator; eventual consistency window risks duplicate alerts; new stream-processing topology to operate."
+          },
+          {
+            "option": "Nightly batch job",
+            "reason": "Violates the 30-second AC for AML notification (US-009 AC1)."
+          },
+          {
+            "option": "Synchronous call to compliance-service before responding to customer",
+            "reason": "Adds latency to the customer path; couples customer SLA to compliance-service availability; AC explicitly says flag must not affect customer experience."
+          }
+        ]
+      },
+      {
+        "id": "ADR-006",
+        "title": "Daily limit reset timezone (OQ-001 assumption)",
+        "decision": "Daily accumulator uses Asia/Bangkok civil date (UTC+7). DailyTransferAccumulator.accumulation_date stores the Bangkok DATE; system internal timestamps remain UTC. Reset occurs at 17:00 UTC = 00:00 Bangkok.",
+        "rationale": "BA OQ-001 needs confirmation; reasonable default chosen because (a) customers are Thai retail, (b) BoT regulatory reporting uses Bangkok calendar day, (c) AML threshold definition naturally aligns with the same civil day boundary. Implementation: when computing the partition key for the accumulator, convert request timestamp to ZoneId.of('Asia/Bangkok') and take toLocalDate(). Documented as an assumption to confirm with Compliance + BA SME before go-live. NOT a blocking issue for backend dev (single config flag transfer-service.daily-reset-zone).",
+        "rejected_options": [
+          {
+            "option": "Reset at midnight UTC",
+            "reason": "Customers transacting between 00:00–07:00 Bangkok time would see their previous-day total carry over confusingly; BoT calendar-day reporting becomes off by 7h."
+          },
+          {
+            "option": "Per-customer configurable timezone",
+            "reason": "Over-engineering for an intra-bank-Thailand v1 feature; adds reporting complexity."
+          }
+        ]
+      },
+      {
+        "id": "ADR-007",
+        "title": "AML scope (OQ-005 assumption)",
+        "decision": "AML 2,000,000 THB threshold applies to OUTBOUND successful transfers per customer per Bangkok civil day (sum of debits from any account owned by the customer). Inbound credits and cash transactions are out of scope for this feature. Flag is advisory (does not block); compliance team reviews via compliance-service.",
+        "rationale": "BA OQ-005 needs SME confirmation; reasonable default chosen based on (a) BA AC US-009 explicitly says 'outbound transfers', (b) AML risk focus is on funds leaving the customer's control, (c) inbound credits to a customer are typically the responsibility of the originator's bank. Cumulative sum aggregates across all source accounts owned by the customer (not per-account) to prevent splitting evasion. Documented as assumption; if Compliance later says inbound or combined is required, the accumulator schema (account_id-based) can be aggregated to customer_id via a view without breaking the data model. NOT a blocking issue for backend dev of US-001/US-003.",
+        "rejected_options": [
+          {
+            "option": "Apply to inbound + outbound combined volume",
+            "reason": "BA AC explicitly says outbound; doubling the scope without SME confirmation is over-reach."
+          },
+          {
+            "option": "Per-account accumulator only (no customer-level aggregation)",
+            "reason": "Allows splitting evasion (customer routes through multiple owned accounts to stay under threshold). Customer-level aggregation matches AML intent."
+          },
+          {
+            "option": "Block transactions at threshold (hard limit)",
+            "reason": "BA AC US-009 AC2 explicitly says 'flag is advisory; do not block'; aligns with AML Act intent of reporting, not prevention."
+          }
+        ]
+      },
+      {
+        "id": "ADR-008",
+        "title": "Payee management bounded context: separate payee-service vs merge into account-service",
+        "decision": "Separate payee-service in the Payments bounded context (sibling of transfer-service)",
+        "rationale": "Account-service owns the system-of-record for accounts (a global registry). Payees are per-customer saved lists — a different aggregate root with different lifecycle (customer can soft-delete; account cannot be 'deleted' by a customer). Different scaling profile: account-service sits on the synchronous critical path of every transfer and must be optimized for read-balance / debit / credit; payee CRUD is low-TPS and would just add noise. Different access pattern: payee lookup is filtered by owner_customer_id (per-customer table partitioning works well); account is global. Lookup endpoint (US-010) is proxied through payee-service which calls account-service internally, keeping account-service oblivious to per-customer payee lists.",
+        "rejected_options": [
+          {
+            "option": "Merge payee CRUD into account-service",
+            "reason": "Mixes two aggregates; adds payee-CRUD load to the critical-path account-service; couples customer-view feature changes to the global account model."
+          },
+          {
+            "option": "Put payee CRUD inside transfer-service",
+            "reason": "Transfer-service should focus on the saga; mixing payee CRUD bloats its responsibility and breaks SRP."
+          }
+        ]
+      },
+      {
+        "id": "ADR-009",
+        "title": "Service mesh: Istio/Linkerd vs Kubernetes-native + Spring Cloud",
+        "decision": "No dedicated service mesh in v1. Use Kubernetes Service DNS for discovery + Spring Cloud Gateway at the edge + Resilience4j inside each service for circuit breaker / retry / bulkhead. mTLS handled at K8s ingress + namespace-level NetworkPolicy.",
+        "rationale": "Service mesh (Istio) adds significant operational complexity (control plane upgrade, sidecar resource overhead, debugging sidecar issues) that is not justified at the current service count (9 services). Resilience4j inside the JVM gives us circuit-breaking with full type-safe fallback methods, which is more debuggable than Envoy filter chains. mTLS between services can be added later via cert-manager + envoy sidecars if compliance requires. Defer mesh adoption to when service count grows past ~20 or when cross-language services appear.",
+        "rejected_options": [
+          {
+            "option": "Istio with full sidecar mesh from day one",
+            "reason": "Operational complexity disproportionate to current service count; sidecar resource overhead (CPU/memory) increases hosting cost ~15% with no immediate benefit."
+          },
+          {
+            "option": "Linkerd",
+            "reason": "Same operational complexity argument as Istio, with a smaller ecosystem and less in-house experience."
+          }
+        ]
+      },
+      {
+        "id": "ADR-010",
+        "title": "Schema registry: Confluent vs Apicurio",
+        "decision": "Apicurio Registry (Apache 2.0) with Avro schemas for Kafka events",
+        "rationale": "Apicurio is fully open source (Apache 2.0) with no Confluent Community License restrictions, which is important for the bank's vendor-neutrality stance. It supports the same Confluent-compatible REST API so Spring Kafka clients work unchanged. Avro chosen over Protobuf because it has stronger schema-evolution rules natively (forward/backward/full compatibility checks in the registry) and the team has Avro experience. JSON Schema rejected for events because it lacks compact binary encoding (event payload size matters at 500 TPS).",
+        "rejected_options": [
+          {
+            "option": "Confluent Schema Registry",
+            "reason": "Confluent Community License has commercial-use restrictions that legal review flagged for a bank; lock-in to Confluent Platform."
+          },
+          {
+            "option": "Protobuf with no registry",
+            "reason": "No central evolution check; producers and consumers can drift; harder cross-service governance."
+          },
+          {
+            "option": "JSON Schema",
+            "reason": "Larger payload, no native binary encoding, weaker enforcement of evolution rules."
+          }
+        ]
+      },
+      {
+        "id": "ADR-011",
+        "title": "Concurrency control on account balance (US-007 double-debit prevention)",
+        "decision": "Optimistic locking via JPA @Version on accounts.version column; conflict triggers re-read + retry up to 3 times in account-service; if all retries fail return CONCURRENT_CONFLICT to transfer-service which surfaces as INSUFFICIENT_FUNDS to caller after fresh balance re-read",
+        "rationale": "Optimistic locking is correct for low-contention accounts (a single account rarely sees concurrent transfers). It avoids the deadlock risk of pessimistic locking across the debit/credit pair (debiting A and crediting B at the same time as another transfer debits B and credits A — classic deadlock with pessimistic). Retry budget of 3 with jitter caps tail latency. PostgreSQL row-level isolation guarantees the @Version CAS is atomic. For US-007 AC1 'both succeed OR second rejected' — this is exactly the optimistic-lock semantics.",
+        "rejected_options": [
+          {
+            "option": "SELECT FOR UPDATE pessimistic lock",
+            "reason": "Deadlock risk in cross-account scenarios; lock held for the duration of the JPA flush which can include slow downstream calls."
+          },
+          {
+            "option": "Single-threaded actor per account (e.g., Akka)",
+            "reason": "Introduces a new programming model and runtime; over-engineering."
+          },
+          {
+            "option": "Application-level distributed lock (Redis Redlock)",
+            "reason": "Operationally complex; Redlock has known correctness debates; PostgreSQL's MVCC + @Version is simpler and sufficient."
+          }
+        ]
+      },
+      {
+        "id": "ADR-012",
+        "title": "Audit log immutability enforcement",
+        "decision": "Two-layer enforcement: (1) audit-service's PostgreSQL role granted INSERT only, no UPDATE/DELETE GRANTs on audit_log; (2) row-level append-only trigger that raises exception on UPDATE/DELETE attempts. Partition by created_at date for cost-efficient 7-year retention with cold-tier archival.",
+        "rationale": "Defense in depth: even if an application bug or SQL injection tries to modify the audit log, the DB role lacks the privilege. Triggers catch any direct connection that somehow has wider grants (e.g., DBA). Date partitioning lets us move partitions older than 90 days to slower storage without changing the query API. 7-year retention is BoT mandatory.",
+        "rejected_options": [
+          {
+            "option": "Application-only immutability (no DB enforcement)",
+            "reason": "A code regression or a malicious insider could update records; insufficient for SOX/BoT auditor expectations."
+          },
+          {
+            "option": "Blockchain / hash-chained audit log",
+            "reason": "Operationally complex, no regulatory requirement, no proven benefit over append-only RDBMS + signed off-site backups."
+          }
+        ]
+      }
+    ],
+    "nfr_traceability": {
+      "performance_p95_lt_1s_end_to_end": "transfer-service uses direct in-DB writes (no synchronous cross-service round trips beyond account-service debit+credit). Idempotency check is a single PK lookup on transfer_idempotency. Saga is in-process state machine (no orchestrator network hops). Resilience4j time-limiter set to 800ms on account-service calls to fail fast. Reference: ADR-001, ADR-002.",
+      "performance_p99_lt_3s_end_to_end": "Resilience4j retry budget capped at 1 retry with jitter on transient account-service errors; circuit breaker opens at 50% errors in 10s window to shed load. PostgreSQL connection pool (HikariCP) sized for peak 500 TPS with connection wait timeout 500ms. Reference: ADR-009.",
+      "performance_internal_p95_lt_300ms": "transfer-service avoids synchronous calls except account-service. All events emitted via outbox (async). Idempotency-Key check is single-row read. Reference: ADR-002, ADR-003.",
+      "performance_payee_lookup_p95_lt_500ms": "payee-service caches account-service lookup results in Redis (60s TTL, customer-scoped); cache miss falls through to account-service which has account_number indexed. Reference: ADR-008.",
+      "performance_notification_within_60s": "notification-service consumes Kafka events with consumer group lag SLO < 5s; each channel dispatch has 3-retry exponential backoff (1s, 2s, 4s = 7s max). Async pipeline so customer response not blocked.",
+      "scalability_sustained_100_tps_burst_500_tps": "Stateless services horizontally scaled by Kubernetes HPA on CPU + custom metric (kafka_consumer_lag). Kafka topics partitioned by source_account_id (partition count = 30, replication factor 3) so account hot-spots distribute. PostgreSQL connection pool sized to 50 per pod * 10 pods = 500 connections. Reference: ADR-004 (optimistic locking suits low per-account contention).",
+      "availability_99_95_pct_transfer_service": "Multi-AZ deployment (min 3 replicas across 3 AZs); PostgreSQL HA via streaming replication + Patroni; Kafka replication factor 3 with min.insync.replicas=2; circuit breakers prevent cascade failure from account-service. Reference: ADR-009, ADR-011.",
+      "availability_99_9_pct_notification": "Notification is async via Kafka durable log; consumer can lag during incidents and catch up; channel-provider failures isolated per channel.",
+      "availability_99_99_pct_gateway": "Spring Cloud Gateway deployed with min 5 replicas across 3 AZs; behind cloud LB with health checks; no DB dependency (stateless).",
+      "resilience_rto_lt_15min": "Kubernetes pod restart < 60s; PostgreSQL Patroni failover < 30s; Kafka broker replacement automatic via controller. Disaster recovery runbook (Tech Lead to author) targets cross-region restore within 15min from durable backups.",
+      "resilience_rpo_lt_1min": "PostgreSQL synchronous replication to a hot standby in another AZ; Kafka producer acks=all with min.insync.replicas=2; outbox commits in same DB transaction as business write. Reference: ADR-003.",
+      "security_oauth2_jwt_rs256": "identity-service issues RS256 JWTs (15min TTL); api-gateway validates signature using public key fetched from JWKS endpoint; key rotation via Vault.",
+      "security_tls_1_2_plus": "TLS termination at api-gateway + cloud LB; internal pod-to-pod over namespace NetworkPolicy + future mTLS (deferred per ADR-009).",
+      "security_rate_limit_60_per_min": "api-gateway uses Spring Cloud Gateway request-rate-limiter with Redis token bucket per customer_id; 429 response on exceed.",
+      "security_pii_encryption_at_rest_aes_256_gcm": "PostgreSQL TDE (transparent disk encryption) at cloud-provider layer; column-level encryption for account_number in payee-service.payees via pgcrypto + key from Vault.",
+      "security_secrets_in_vault": "All service secrets (DB passwords, Kafka SASL creds, signing keys) injected via Vault Agent sidecar or K8s Secrets sourced from Vault. No secrets in code or config files. Reference: ADR-009.",
+      "security_no_pan_data": "Intra-bank transfers only; no card data on any code path. Confirmed PCI-DSS out of scope.",
+      "data_retention_7_years_audit_and_transfer": "audit-service.audit_log partitioned by date; partitions older than 90 days move to cold storage; total retention 7 years enforced by lifecycle policy. Same policy on transfers table in transfer-service. Reference: ADR-012.",
+      "data_retention_24h_idempotency_ttl": "transfer_idempotency.expires_at index; scheduled cleanup job runs hourly to DELETE WHERE expires_at < now(). Reference: ADR-002.",
+      "compliance_pdpa": "Data minimization: account numbers masked to last 4 digits in API responses and non-encrypted logs (logback masking filter in observability-lib); ip_address hashed before persistence; consent management in identity-service.user_consents and notification-service.channel_preferences; data subject export/erasure APIs in identity-service with legal-hold override for audit records.",
+      "compliance_bot_circular": "Audit log immutability at DB role + trigger level (ADR-012); 7-year retention; incident reporting via PagerDuty integration in DevOps phase; segregation of duties: ops role cannot modify audit_log or transfer records.",
+      "compliance_aml_2_000_000_thb": "Synchronous threshold check during transfer commit; advisory flag only (non-blocking); 30s notification to compliance-service. Reference: ADR-005, ADR-007.",
+      "observability_distributed_tracing": "OpenTelemetry SDK in each service (observability-lib shared module); traceparent propagated through HTTP + Kafka headers; correlation_id stamped on every log line and audit record.",
+      "observability_metrics_prometheus": "Micrometer-to-Prometheus in every service; standard metrics (transfer_requests_total, transfer_duration_histogram, saga_compensation_total, daily_limit_rejections_total, aml_threshold_breach_total) defined in observability-lib.",
+      "us_001_happy_path": "transfer-service owns the saga; account-service performs atomic debit/credit; audit-service + notification-service consume TransferCompleted async.",
+      "us_002_insufficient_balance": "account-service balance check returns INSUFFICIENT_FUNDS to transfer-service; rejection persisted in transfer_idempotency so replay is idempotent.",
+      "us_003_idempotency_key": "transfer-service.transfer_idempotency table; SHA-256 hash of key as PK; request_checksum for conflict detection. Reference: ADR-002.",
+      "us_004_per_transaction_limit": "transfer-service reads customer_tier.transaction_limit from account-service (cached 60s in Redis); limit value at decision time recorded in audit event.",
+      "us_005_daily_cumulative_limit": "transfer-service.daily_transfer_accumulator with optimistic lock; Bangkok timezone partition. Reference: ADR-004, ADR-006.",
+      "us_006_frozen_inactive_account": "account-service status check on both source and destination before any debit; SourceAccountFrozen / DestinationAccountFrozen errors propagated; ops alert via audit-service event.",
+      "us_007_concurrent_double_debit": "account-service @Version optimistic locking with retry; CONCURRENT_CONFLICT surfaces as INSUFFICIENT_FUNDS to caller after fresh re-read. Reference: ADR-011.",
+      "us_008_saga_compensation": "transfer-service saga coordinator with persisted saga_state; compensation step calls account-service reverse-debit; double-fault escalation to PagerDuty. Reference: ADR-001.",
+      "us_009_aml_threshold": "Synchronous breach detection in same transaction as accumulator update; AmlThresholdBreached event to compliance-service. Reference: ADR-005, ADR-007.",
+      "us_010_payee_add_lookup": "payee-service owns payee list; calls account-service for masked-name lookup; revalidates at transfer submission time. Reference: ADR-008.",
+      "us_011_async_notifications": "notification-service consumes TransferCompleted / TransferFailed / TransferCompensated; per-channel retry; opt-out respected via channel_preferences."
+    },
+    "tech_choices": {
+      "messaging": "Apache Kafka 3.x (existing cluster); 3 brokers minimum; replication factor 3; min.insync.replicas 2; topic naming convention per project-structure.md (<service>.<entity>.<event>.v<n>)",
+      "schema_registry": "Apicurio Registry (Apache 2.0) with Avro schemas; compatibility mode BACKWARD on producer topics. Reference: ADR-010.",
+      "db": "PostgreSQL 16 — one logical database per service (transfer_db, account_db, ledger_db, audit_db, payee_db, notification_db, compliance_db, users_db); Patroni HA with synchronous replica in 2nd AZ; pgcrypto for column-level encryption where needed",
+      "db_migration": "Flyway, scripts under each service's src/main/resources/db/migration (V<seq>__<desc>.sql); forward-only migrations; rollback via compensating migration",
+      "cache": "Redis 7 — used for: api-gateway rate-limit token buckets, payee-service lookup cache (60s TTL), customer_tier limit cache in transfer-service (60s TTL). NOT used for idempotency (per ADR-002). Single cluster shared by services; per-service key prefix.",
+      "api_gateway": "Spring Cloud Gateway (Java 21 reactor); JWT validation; rate limiting; request correlation_id injection",
+      "service_mesh": "None in v1 (per ADR-009); K8s NetworkPolicy + Service DNS; revisit when service count exceeds ~20",
+      "auth": "OAuth2 / OIDC via identity-service (Spring Authorization Server); RS256 JWT, 15-min access token TTL, refresh token rotation; JWKS endpoint for public-key distribution",
+      "observability_tracing": "OpenTelemetry SDK + OTLP exporter -> collector -> Tempo (or Jaeger)",
+      "observability_metrics": "Micrometer -> Prometheus -> Grafana",
+      "observability_logs": "Logback JSON encoder -> stdout -> Fluent Bit -> Loki",
+      "resilience": "Resilience4j (circuit breaker, retry, time-limiter, bulkhead) in each service",
+      "secrets": "HashiCorp Vault; K8s integration via Vault Agent Injector or CSI driver",
+      "containers": "Docker images built via Buildpacks (Paketo) or Maven jib-plugin; base image Eclipse Temurin 21 JRE",
+      "orchestration": "Kubernetes (EKS / GKE / AKS depending on cloud); Helm charts per service; namespaces per environment",
+      "ci_cd": "GitHub Actions; pipeline per project-structure.md (lint -> unit -> SAST/SCA -> build -> integration with Testcontainers -> container scan -> deploy)",
+      "shared_libraries": "common-libs/ Maven modules: audit-lib (event publisher), idempotency-lib (Idempotency-Key handling per ADR-002), observability-lib (OTel + metric setup + log masking filter)"
+    },
+    "risks": [
+      {
+        "id": "RISK-001",
+        "title": "Saga compensation double-fault (COMPENSATION_FAILED) leaves funds locked",
+        "severity": "high",
+        "description": "If both the credit step and the compensating re-credit fail (network partition, account-service prolonged outage), funds are debited from source with no automatic return. US-008 AC3 says raise PagerDuty alert + customer notification, but actual restoration is manual.",
+        "mitigation": "(1) Persist saga_state durably so a recovery worker can resume from any step. (2) Schedule a reconciliation job in transfer-service that scans for transfers in COMPENSATION_PENDING or COMPENSATION_FAILED status older than 10 min and re-attempts compensation. (3) Ops runbook with explicit SLA for manual resolution (need OQ-006 SME input). (4) Daily ledger-service reconciliation flags any unbalanced journal."
+      },
+      {
+        "id": "RISK-002",
+        "title": "Daily accumulator hot row contention at midnight reset",
+        "severity": "medium",
+        "description": "At 00:00 Bangkok time, the previous-day accumulator becomes irrelevant and a new row is inserted on first transfer of the new day. Concurrent first-transfers for the same account could race to insert. Optimistic lock at row level still works but pre-insert race may produce UNIQUE constraint failures.",
+        "mitigation": "INSERT ... ON CONFLICT DO UPDATE (PostgreSQL upsert) on (account_id, accumulation_date) unique constraint. First transfer of the day inserts with cumulative=amount; subsequent transfers fall into the optimistic-lock update path. Tested via integration test with parallel inserts."
+      },
+      {
+        "id": "RISK-003",
+        "title": "Kafka consumer lag spike during burst causes notification SLA breach",
+        "severity": "medium",
+        "description": "During 500 TPS bursts, notification-service consumer group lag may exceed 5s, pushing notification dispatch beyond the 60s SLA. Email/SMS provider rate limits may also throttle.",
+        "mitigation": "(1) Partition count 30 on notification topics so consumer parallelism is 30. (2) Auto-scale notification-service on kafka_consumer_lag metric (HPA custom metric). (3) Pre-warm provider connections; circuit-break per provider so one slow provider does not block others. (4) Channel dispatch happens in parallel per event (CompletableFuture)."
+      },
+      {
+        "id": "RISK-004",
+        "title": "Idempotency-Key TTL purge job lag fills disk",
+        "severity": "low",
+        "description": "transfer_idempotency table grows by ~8.6M rows/day at 100 TPS. If TTL cleanup job lags or fails, table grows unbounded and DB performance degrades.",
+        "mitigation": "(1) Hourly cleanup job with idempotent SQL: DELETE WHERE expires_at < now() LIMIT 100000. (2) Monitoring alert if table row count exceeds 30M (proxy for cleanup lag). (3) Partition transfer_idempotency by created_at day so old partitions can be DROPped wholesale."
+      },
+      {
+        "id": "RISK-005",
+        "title": "OQ-001 / OQ-005 assumptions wrong → rework",
+        "severity": "medium",
+        "description": "ADR-006 (timezone) and ADR-007 (AML scope) are based on reasonable defaults pending SME confirmation. If Compliance disagrees, accumulator partition key and/or scope must change.",
+        "mitigation": "(1) ADR-006 isolates timezone to a single config flag; change is config-only. (2) ADR-007 accumulator schema is account_id-based but aggregation to customer_id is a view-level change, not a schema migration. (3) Flag both as blockers to go-live (must be confirmed before prod). Backend dev for US-001/US-003 can proceed because they do not touch the daily-limit or AML logic."
+      },
+      {
+        "id": "RISK-006",
+        "title": "Account-service becomes synchronous bottleneck for transfer-service",
+        "severity": "high",
+        "description": "Every transfer makes 4-5 synchronous calls to account-service (status check source, balance check, status check destination, debit, credit). If account-service slows, transfer-service p95 explodes.",
+        "mitigation": "(1) Resilience4j time-limiter 800ms per call, circuit breaker on 50% error. (2) Bulkhead: separate thread pools for transfer-vs-other traffic in account-service. (3) account-service deployed with HPA and pre-provisioned replicas for peak. (4) Combine the 3 status+balance reads into a single 'reserve-with-check' RPC to halve round trips (Tech Lead to design)."
+      }
+    ],
+    "c4_context_mermaid": "flowchart TB\n    User[Bank Customer] -->|HTTPS| WAF[WAF / CDN]\n    WAF --> GW[api-gateway<br/>Spring Cloud Gateway<br/>JWT validation, rate-limit]\n    GW -->|/api/v1/auth/*| IDS[identity-service<br/>OAuth2/OIDC]\n    GW -->|/api/v1/accounts/*| ACS[account-service<br/>Balance, holds, status, limits]\n    GW -->|/api/v1/payees/*| PYS[payee-service<br/>Saved payee list]\n    GW -->|/api/v1/transfers/*| TRS[transfer-service<br/>Saga orchestrator<br/>Idempotency, accumulator]\n\n    PYS -->|lookup| ACS\n    TRS -->|status / debit / credit| ACS\n    ACS -->|journal| LGS[ledger-service<br/>Double-entry bookkeeping]\n\n    TRS -.outbox.-> K[(Kafka 3.x<br/>Apicurio Schema Registry)]\n    ACS -.outbox.-> K\n    PYS -.outbox.-> K\n    NTS -.dispatch log.-> K\n    CMS -.case events.-> K\n\n    K --> NTS[notification-service<br/>email, SMS, push]\n    K --> AUS[audit-service<br/>7yr immutable log]\n    K --> CMS[compliance-service<br/>AML case queue]\n\n    NTS --> EXT_EMAIL[Email Provider]\n    NTS --> EXT_SMS[SMS Provider]\n    NTS --> EXT_PUSH[Push Provider]\n\n    ACS --> DB_ACS[(PostgreSQL<br/>account_db)]\n    PYS --> DB_PYS[(PostgreSQL<br/>payee_db)]\n    TRS --> DB_TRS[(PostgreSQL<br/>transfer_db)]\n    LGS --> DB_LGS[(PostgreSQL<br/>ledger_db)]\n    AUS --> DB_AUS[(PostgreSQL<br/>audit_db<br/>INSERT only role)]\n    CMS --> DB_CMS[(PostgreSQL<br/>compliance_db)]\n    NTS --> DB_NTS[(PostgreSQL<br/>notification_db)]\n    IDS --> DB_IDS[(PostgreSQL<br/>users_db)]\n\n    GW -.rate-limit tokens.-> R[(Redis 7<br/>shared cache)]\n    PYS -.lookup cache.-> R\n    TRS -.tier limit cache.-> R\n\n    VAULT[HashiCorp Vault] -.secrets.-> GW\n    VAULT -.secrets.-> TRS\n    VAULT -.secrets.-> ACS"
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-18T11:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "a3f7c2e1-84b0-4d9f-b6e3-2c51f0d8a749",
+    "notes": "Solution architecture for Money Transfer v1 (intra-bank, THB, retail internet banking). 9 services across Edge / IAM / Accounts / Payments / Ledger / Compliance / Notifications. 14 events on Kafka with Apicurio Avro schemas. 12 ADRs covering saga style, idempotency, outbox, accumulator, AML, timezone (OQ-001), AML scope (OQ-005), payee bounded context, service mesh, schema registry, optimistic locking, audit immutability. 6 risks identified with mitigations. All 11 BA user stories and all 7 NFR categories traced to design decisions. OQ-001 + OQ-005 documented as assumptions in ADR-006 + ADR-007 with SME-confirmation requirement flagged. No shared-DB violations: each service owns its tables. Mermaid C4 context diagram inlined for Tech Lead consumption."
+  }
+}

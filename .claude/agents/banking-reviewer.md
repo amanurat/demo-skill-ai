@@ -49,83 +49,15 @@ Handoff artifact to `banking-security` (if approved) or back to dev (if changes 
 }
 ```
 
-## Review Checklist (Backend)
+## Before You Review (mandatory reads)
 
-### Architecture / Design
-- [ ] Hexagonal layers respected (no JPA in interfaces, no controllers in domain)
-- [ ] Domain logic in entities/VOs, not anemic services
-- [ ] No service-to-service synchronous chain > 2
-- [ ] Bounded context boundaries respected
-- [ ] Idempotency-Key handled for financial endpoints
-- [ ] Outbox pattern for events (not direct Kafka send in tx)
-- [ ] Saga steps have explicit compensations
+Subagent context does not auto-load skills. Read these before reviewing any PR:
 
-### Code Quality
-- [ ] SOLID applied (especially SRP, DIP)
-- [ ] Constructor injection (not field)
-- [ ] DTO ↔ Entity mapping via MapStruct (no JPA leaks)
-- [ ] Money as `BigDecimal` (not `double`)
-- [ ] `BigDecimal.equals` vs `compareTo` used correctly
-- [ ] Exceptions specific (not bare `Exception`)
-- [ ] Optional used at API boundary, not as fields
-- [ ] Null checks reasoned (or `@NonNull` annotation)
-
-### Tests
-- [ ] Unit coverage ≥ 80% (≥ 95% for money paths)
-- [ ] Integration tests with real Postgres + Kafka (Testcontainers)
-- [ ] Test names describe behavior, not method
-- [ ] Edge cases tested (insufficient, duplicate, daily limit, partial failure)
-- [ ] No `@MockBean` of class under test
-
-### Security / Banking Hard Rules
-- [ ] No hardcoded secrets
-- [ ] No PII / card numbers / JWTs in logs
-- [ ] No `String.format`-built SQL
-- [ ] Input validated with Bean Validation
-- [ ] Auth annotation on every sensitive endpoint
-
-### Observability
-- [ ] Logger uses structured fields (no `+` concat)
-- [ ] Correlation ID propagated via MDC
-- [ ] Custom business metrics added
-- [ ] OTel spans on key operations
-
-## Review Checklist (Frontend)
-
-### Code Quality
-- [ ] TypeScript strict; no `any`
-- [ ] Reactive forms for money operations
-- [ ] No `bypassSecurityTrust*`
-- [ ] JWT not in localStorage
-- [ ] `OnPush` change detection
-- [ ] Lazy-loaded routes
-
-### UX
-- [ ] Loading + error states everywhere
-- [ ] Confirmation step on irreversible actions
-- [ ] No optimistic UI for money
-- [ ] i18n for all user-facing strings
-- [ ] a11y AA verified
-
-## Common Anti-Patterns to Flag (Quick Reference)
-
-| Pattern | Severity | Why |
-|---|---|---|
-| Anemic Domain Model | major | Business rules scattered, bypassable |
-| God Service | major | Hard to test, deploy, scale |
-| Distributed Monolith | blocker | Sync chains break independent deploy |
-| Hardcoded secret | blocker | Audit + leak risk |
-| Logging PII / cards | blocker | Compliance violation |
-| `Exception` catch-all | major | Hides real bugs |
-| `OneToMany` to big collection | major | Memory blow-up |
-| `@Data` on entity | minor | Mutable + broken hashCode |
-| Floats for money | blocker | Precision loss |
-| Missing `@Transactional` boundary | major | Inconsistent writes |
-| `@Transactional` on controller | minor | Wrong layer |
-| Direct Kafka send in tx | major | Risk of message lost on rollback |
-| Optimistic UI on money tx | blocker | Customer confusion / disputes |
-| `any` in TS | minor | Type safety lost |
-| Skipped a11y | major | Legal + UX |
+1. **Skill**: [`code-review-checklists`](../skills/code-review-checklists/SKILL.md) — backend + frontend review checklists, anti-pattern catalog
+2. **Skill**: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) for backend PRs — coding standards + `references/spring-anti-patterns.md`
+3. **Skill**: [`angular-banking-ui`](../skills/angular-banking-ui/SKILL.md) for frontend PRs — UI patterns + `references/angular-anti-patterns.md`
+4. **Skill**: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md) — hard rules (auto-fail items)
+5. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your verdict output
 
 ## Decision Rules
 
@@ -137,14 +69,6 @@ Handoff artifact to `banking-security` (if approved) or back to dev (if changes 
 | Tests insufficient | `changes_requested` even if code looks fine |
 | Unclear intent | Ask for clarification (NOT auto-reject) |
 
-## Anti-Patterns (For Reviewer Itself)
-
-- Being pedantic on style when substance is fine
-- Demanding rewrites instead of suggesting fixes
-- Reviewing the person, not the code
-- Missing big issues while debating bikesheds
-- Approving without reading actual diffs
-
 ## Acceptance Criteria (own DoD)
 
 - [ ] Every file in `files_changed` reviewed
@@ -155,6 +79,9 @@ Handoff artifact to `banking-security` (if approved) or back to dev (if changes 
 
 ## Reference
 
-- [Backend Dev Skill](banking-backend-dev.md)
-- [Frontend Dev Skill](banking-frontend-dev.md)
+- Skill: [`code-review-checklists`](../skills/code-review-checklists/SKILL.md)
+- Skill: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md)
+- Skill: [`angular-banking-ui`](../skills/angular-banking-ui/SKILL.md)
+- Skill: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md)
+- [Handoff Schema](../../docs/architecture/handoff-schema.md)
 - [Quality Gates](../../docs/architecture/quality-gates.md)

@@ -1,0 +1,187 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "transfer-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "transfer-service.labels" . | nindent 4 }}
+  annotations:
+    deployment.kubernetes.io/revision: "{{ .Release.Revision }}"
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "transfer-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # Zero-downtime rolling update (requires PDB minAvailable >= 2)
+  template:
+    metadata:
+      labels:
+        {{- include "transfer-service.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        # Force pod restart when ConfigMap changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "transfer-service.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 60   # Allow in-flight requests to complete (graceful shutdown)
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 9090
+              protocol: TCP
+          env:
+            # Spring profile
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ .Values.config.springProfile | quote }}
+
+            # Environment tag for Micrometer metrics
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "transfer-service.fullname" . }}-config
+                  key: environment
+
+            # Database connection (non-secret)
+            - name: DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "transfer-service.fullname" . }}-config
+                  key: db.url
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "transfer-service.fullname" . }}-config
+                  key: db.username
+            - name: DB_POOL_MAX
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "transfer-service.fullname" . }}-config
+                  key: db.poolMax
+
+            # Database password — from Vault CSI file mount (Security ITEM-4)
+            # The app reads DB_PASSWORD from the mounted file via Spring's
+            # spring.datasource.password=${DB_PASSWORD} referencing the env var,
+            # which is sourced from the file via Spring Cloud Vault or env-from-file.
+            # NOTE: prefer spring.config.import=configtree:/vault/secrets/ in application.yml
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  # This Secret is populated by the Vault CSI provider (SecretProviderClass)
+                  name: transfer-service-vault-db
+                  key: db-password
+
+            # Management port isolation (Security ITEM-9)
+            - name: MANAGEMENT_SERVER_PORT
+              value: {{ .Values.config.management.port | quote }}
+            - name: MANAGEMENT_SERVER_ADDRESS
+              value: {{ .Values.config.management.address | quote }}
+
+            # OTel collector endpoint
+            {{- if .Values.config.otel.enabled }}
+            - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+              value: {{ .Values.config.otel.endpoint | quote }}
+            - name: MANAGEMENT_TRACING_SAMPLING_PROBABILITY
+              value: {{ .Values.config.otel.samplingRate | quote }}
+            {{- end }}
+
+            # Swagger UI disabled in non-local envs (Security ITEM-9)
+            - name: SPRINGDOC_SWAGGER_UI_ENABLED
+              value: {{ .Values.config.springdoc.swaggerUiEnabled | quote }}
+
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            successThreshold: {{ .Values.probes.liveness.successThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.extraVolumeMountsSystem }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+      volumes:
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.extraVolumesSystem }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

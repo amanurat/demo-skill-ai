@@ -54,108 +54,13 @@ Final handoff back to `banking-player`:
 7. **Smoke tests** post-deploy — automated probe of key endpoints
 8. **Rollback rehearsal** — verify rollback works before marking done
 
-## CI/CD Pipeline Standard
+## Before You Deploy (mandatory reads)
 
-```yaml
-stages:
-  - lint (parallel: java + ts)
-  - unit-test (parallel per module)
-  - sast-sca (Semgrep + OWASP DC + Trivy)
-  - build (Buildx, multi-arch)
-  - integration-test (Testcontainers)
-  - container-scan (Trivy on image)
-  - push-registry (signed image + SBOM)
-  - deploy-staging (Helm)
-  - smoke-tests
-  - dast (against staging)
-  - manual-gate (approval)
-  - deploy-prod (Helm, canary if configured)
-```
+Subagent context does not auto-load skills. Read these before building pipelines or manifests:
 
-## Dockerfile Standard
-
-```dockerfile
-# Build
-FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /app
-COPY . .
-RUN ./mvnw -q -DskipTests package
-
-# Runtime
-FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S app && adduser -S app -G app
-USER app
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-HEALTHCHECK --interval=10s CMD wget -q -O - http://localhost:8080/actuator/health/liveness || exit 1
-ENTRYPOINT ["java","-XX:+UseG1GC","-XX:MaxRAMPercentage=75","-jar","/app/app.jar"]
-```
-
-## Helm Values (Sketch)
-
-```yaml
-replicaCount: 3
-resources:
-  requests: { cpu: 500m, memory: 1Gi }
-  limits:   { cpu: 1500m, memory: 2Gi }
-autoscaling:
-  enabled: true
-  minReplicas: 3
-  maxReplicas: 12
-  targetCPU: 70
-podDisruptionBudget:
-  minAvailable: 2
-service:
-  type: ClusterIP
-  port: 8080
-probes:
-  liveness:  { path: /actuator/health/liveness,  initialDelaySeconds: 30 }
-  readiness: { path: /actuator/health/readiness, initialDelaySeconds: 10 }
-config:
-  springProfile: staging
-  vault: enabled
-  otel:
-    endpoint: http://otel-collector:4317
-```
-
-## Observability Deliverables
-
-### Grafana Dashboard (per service)
-- Request rate (RPS) by endpoint
-- Error rate by endpoint
-- Latency p50 / p95 / p99
-- JVM heap, GC pauses
-- DB pool usage, slow queries
-- Kafka lag (if consumer)
-- Custom business: `transfers_completed_total`, `transfer_amount_thb_sum`
-
-### Alerts (Prometheus rules)
-- HighErrorRate: 5xx > 1% over 5 min
-- HighLatency: p95 > SLA for 5 min
-- HighGcPauses: GC > 500ms for 1 min
-- PodCrashLooping: restart > 3 in 10 min
-- KafkaLagHigh: consumer lag > 10k for 5 min
-- Custom: `transfers_failed_ratio > 0.05`
-
-## Secrets / Config
-
-- **Secrets** in Vault / AWS Secrets Manager — injected via CSI driver or sidecar
-- **No secrets in Helm values or ConfigMaps**
-- **Per-environment overrides** via Helm value files
-
-## ❌ Anti-Patterns
-
-- `:latest` image tag in prod (use semver + digest)
-- Running as root in container
-- Mounting writable host paths
-- Secrets in env vars (use file mount or Vault injection)
-- No resource limits → noisy neighbor
-- No PodDisruptionBudget → outage during node drain
-- "Deploy first, observe later"
-- Manual changes via `kubectl edit` (drift)
-- No rollback rehearsal
-- Single replica in prod
+1. **Skill**: [`banking-devops-platform`](../skills/banking-devops-platform/SKILL.md) — CI/CD stages, Dockerfile, Helm, Grafana/alerts (read SKILL.md + relevant references/ on-demand)
+2. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — `infra/` layout, image naming, helm release naming
+3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
 ## Decision Rules
 
@@ -181,5 +86,7 @@ config:
 
 ## Reference
 
+- Skill: [`banking-devops-platform`](../skills/banking-devops-platform/SKILL.md)
 - [Project Structure (infra)](../../docs/architecture/project-structure.md)
+- [Handoff Schema](../../docs/architecture/handoff-schema.md)
 - [Definition of Done](../../docs/architecture/definition-of-done.md)

@@ -1,0 +1,34 @@
+# Exclude files that must never enter the Docker build context
+# Security: no credentials, no secrets, no local overrides
+
+# Build output (build stage downloads fresh)
+target/
+
+# Local environment files (secrets must NEVER be baked into images)
+.env
+.env.*
+application-local.yml
+application-local.properties
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/id_rsa*
+**/id_ed25519*
+
+# Git history (unnecessary bloat)
+.git/
+.gitignore
+
+# IDE / OS artifacts
+.idea/
+*.iml
+*.iws
+.DS_Store
+Thumbs.db
+
+# CI / test reports (not needed in image)
+**/surefire-reports/
+**/failsafe-reports/
+**/jacoco.exec
+**/jacoco-report/

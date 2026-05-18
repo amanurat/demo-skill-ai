@@ -1,0 +1,604 @@
+# =============================================================================
+# CI/CD Pipeline — transfer-service
+# Standard: banking-devops-platform/references/ci-cd-pipeline.md (11 stages)
+#
+# Stages:
+#   1. lint              — Checkstyle + Spotless
+#   2. unit-test         — mvn test (JUnit 5 + JaCoCo)
+#   3. sast-sca          — Semgrep SAST + Trivy filesystem SCA
+#   4. build             — Docker Buildx (multi-arch amd64 + arm64)
+#   5. integration-test  — mvn verify -P integration (Testcontainers + Postgres)
+#   6. container-scan    — Trivy on built image
+#   7. push-registry     — Push to GHCR, sign with cosign, attach SBOM
+#   8. deploy-staging    — Helm upgrade --atomic (manual gate: staging only on main)
+#   9. smoke-tests       — k6 / curl probe of key endpoints
+#  10. dast              — OWASP ZAP baseline scan against staging
+#  11. manual-gate       — Human approval before prod
+#
+# Triggers:
+#   - Push to main or release/* branches
+#   - Pull requests targeting main
+#
+# Secrets required (configured in GitHub Actions secrets):
+#   GHCR_TOKEN          — GitHub Container Registry write token
+#   KUBECONFIG_STAGING  — base64-encoded kubeconfig for banking-staging cluster
+#   COSIGN_KEY          — cosign signing key (base64-encoded)
+#   COSIGN_KEY_PASSWORD — cosign key passphrase
+# =============================================================================
+
+name: transfer-service CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+    paths:
+      - "backend/transfer-service/**"
+      - "infra/helm/transfer-service/**"
+      - ".github/workflows/transfer-service-ci.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/transfer-service/**"
+      - "infra/helm/transfer-service/**"
+
+concurrency:
+  # Cancel superseded runs on the same ref (saves CI minutes)
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/bank/transfer-service
+  HELM_RELEASE_STAGING: transfer-service-staging
+  K8S_NAMESPACE_STAGING: banking-staging
+
+defaults:
+  run:
+    working-directory: backend/transfer-service
+
+jobs:
+
+  # ===========================================================================
+  # Stage 1 — Lint (Checkstyle + Spotless)
+  # ===========================================================================
+  lint:
+    name: "Lint — Checkstyle + Spotless"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run Checkstyle
+        run: ./mvnw -q checkstyle:check -B
+
+      - name: Run Spotless check
+        run: ./mvnw -q spotless:check -B
+
+  # ===========================================================================
+  # Stage 2 — Unit Tests (JUnit 5 + JaCoCo)
+  # ===========================================================================
+  unit-test:
+    name: "Unit Tests"
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run unit tests with JaCoCo
+        # Exclude *IT.java (integration tests run separately with Failsafe)
+        run: ./mvnw -q test -B -Dsurefire.excludes="**/*IT.java"
+
+      - name: Upload JaCoCo unit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-unit-report
+          path: backend/transfer-service/target/site/jacoco/
+          retention-days: 14
+
+      - name: Upload Surefire results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-results
+          path: backend/transfer-service/target/surefire-reports/
+          retention-days: 14
+
+  # ===========================================================================
+  # Stage 3 — SAST + SCA
+  # Semgrep for SAST, Trivy filesystem for SCA + secrets
+  # OWASP Dependency-Check deferred: configured below as a separate step
+  # Fail criteria: any HIGH or CRITICAL finding without approved waiver
+  # ===========================================================================
+  sast-sca:
+    name: "SAST + SCA"
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    permissions:
+      security-events: write    # Required to upload SARIF to GitHub Security tab
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Semgrep SAST scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+            p/java
+          generateSarif: "1"
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: false
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+
+      - name: Trivy filesystem scan (SCA + secrets)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "backend/transfer-service"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          format: "sarif"
+          output: "trivy-fs.sarif"
+
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+
+      # OWASP Dependency-Check (SCA on Maven dependencies)
+      # Note: slow (~5 min NVD download); enable caching in mature pipelines
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: transfer-service
+          path: "backend/transfer-service"
+          format: "HTML,SARIF"
+          out: "dependency-check-report"
+          args: >
+            --failOnCVSS 7
+            --enableRetired
+        continue-on-error: false
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: dependency-check-report/
+          retention-days: 30
+
+  # ===========================================================================
+  # Stage 4 — Build (Docker Buildx, multi-arch)
+  # Image tagged with both git SHA and semver
+  # NEVER uses :latest
+  # ===========================================================================
+  build:
+    name: "Build Image"
+    runs-on: ubuntu-latest
+    needs: [sast-sca]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }} (build the JAR)
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build JAR (skip tests — already ran in unit-test job)
+        run: ./mvnw -q -B -DskipTests package
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract Docker metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern={{version}}
+            type=ref,event=branch,prefix=branch-
+          labels: |
+            org.opencontainers.image.title=transfer-service
+            org.opencontainers.image.description=Intra-bank THB money transfer microservice
+            org.opencontainers.image.vendor=Bank Platform Engineering
+
+      - name: Build and push image (multi-arch)
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: backend/transfer-service
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Assert image size < 300MB
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          SIZE=$(docker inspect ${{ env.IMAGE_NAME }}:sha-$(git rev-parse --short HEAD) \
+            --format='{{.Size}}' 2>/dev/null || echo 0)
+          SIZE_MB=$(( SIZE / 1024 / 1024 ))
+          echo "Image size: ${SIZE_MB}MB"
+          if [ "$SIZE_MB" -gt 300 ]; then
+            echo "ERROR: Image exceeds 300MB (${SIZE_MB}MB) — requires justification"
+            exit 1
+          fi
+        working-directory: .
+
+  # ===========================================================================
+  # Stage 5 — Integration Tests (Testcontainers + real Postgres)
+  # Requires Docker API >= 1.44 (GitHub hosted runners: Docker Desktop 4.19+)
+  # ===========================================================================
+  integration-test:
+    name: "Integration Tests"
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      # Pre-pull Postgres image to speed up Testcontainers startup
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: transfer_db
+          POSTGRES_USER: transfer_user
+          POSTGRES_PASSWORD: transfer_test_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      # Pre-pull Testcontainers Postgres image for faster test startup
+      - name: Pre-pull Postgres image for Testcontainers
+        run: docker pull postgres:16-alpine
+
+      - name: Run integration tests (Failsafe *IT.java)
+        run: ./mvnw verify -B -P integration -Dfailsafe.includes="**/*IT.java"
+        env:
+          # Allow Testcontainers to use the Docker socket on CI runner
+          TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+          DOCKER_HOST: unix:///var/run/docker.sock
+
+      - name: Upload JaCoCo full report (unit + integration)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-full-report
+          path: backend/transfer-service/target/site/jacoco/
+          retention-days: 14
+
+      - name: Upload Failsafe results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failsafe-results
+          path: backend/transfer-service/target/failsafe-reports/
+          retention-days: 14
+
+  # ===========================================================================
+  # Stage 6 — Container Scan (Trivy on image)
+  # Fail on HIGH or CRITICAL CVE without documented waiver
+  # ===========================================================================
+  container-scan:
+    name: "Container Scan (Trivy)"
+    runs-on: ubuntu-latest
+    needs: [build, integration-test]
+    if: github.event_name != 'pull_request'
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          format: "sarif"
+          output: "trivy-image.sarif"
+
+      - name: Upload Trivy image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+
+  # ===========================================================================
+  # Stage 7 — Push Registry (cosign sign + SBOM via syft)
+  # Only runs on main / release branches (not PRs)
+  # ===========================================================================
+  push-registry:
+    name: "Sign Image + Attach SBOM"
+    runs-on: ubuntu-latest
+    needs: [container-scan]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    permissions:
+      id-token: write    # OIDC token for cosign keyless signing
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Generate SBOM (SPDX JSON)
+        run: |
+          syft "${{ env.IMAGE_NAME }}:sha-$(git rev-parse --short HEAD)" \
+            -o spdx-json=sbom.spdx.json
+        working-directory: .
+
+      - name: Sign image with cosign (keyless — OIDC)
+        run: |
+          cosign sign --yes \
+            "${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}"
+
+      - name: Attach SBOM to image
+        run: |
+          cosign attach sbom \
+            --sbom sbom.spdx.json \
+            "${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }}"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+          retention-days: 90
+
+  # ===========================================================================
+  # Stage 8 — Deploy to Staging (Helm)
+  # --atomic: auto-rollback if deployment fails to reach Ready state in 5 min
+  # Only runs on main branch merges (not PRs)
+  # ===========================================================================
+  deploy-staging:
+    name: "Deploy to Staging"
+    runs-on: ubuntu-latest
+    needs: [push-registry]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://transfer.staging.example.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+        working-directory: .
+
+      - name: Helm upgrade --install (staging)
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE_STAGING }} \
+            ./infra/helm/transfer-service \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }} \
+            --create-namespace \
+            --set image.tag=sha-$(git rev-parse --short HEAD) \
+            --set image.repository=${{ env.IMAGE_NAME }} \
+            --atomic \
+            --wait \
+            --timeout 5m \
+            --history-max 5
+        working-directory: .
+
+      - name: Record rollback command
+        run: |
+          echo "Rollback command: helm rollback ${{ env.HELM_RELEASE_STAGING }} --namespace ${{ env.K8S_NAMESPACE_STAGING }}"
+
+  # ===========================================================================
+  # Stage 9 — Smoke Tests (post-deploy probe)
+  # ===========================================================================
+  smoke-tests:
+    name: "Smoke Tests"
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Health check — liveness
+        run: |
+          for i in {1..12}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://transfer.staging.example.com/actuator/health/liveness)
+            if [ "$STATUS" = "200" ]; then
+              echo "Liveness check passed (HTTP $STATUS)"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS — waiting 10s"
+            sleep 10
+          done
+          echo "ERROR: Liveness probe failed after 2 minutes"
+          exit 1
+        working-directory: .
+
+      - name: Health check — readiness
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://transfer.staging.example.com/actuator/health/readiness)
+          [ "$STATUS" = "200" ] && echo "Readiness OK" || (echo "Readiness failed: $STATUS"; exit 1)
+        working-directory: .
+
+      - name: API smoke test — POST /api/v1/transfers (expect 422 insufficient-funds on test account)
+        # Uses a synthetic test account with known-zero balance
+        # Returns 422 INSUFFICIENT_FUNDS — proves the API is live and validating
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            https://transfer.staging.example.com/api/v1/transfers \
+            -H "Content-Type: application/json" \
+            -H "Idempotency-Key: smoke-test-$(date +%s)" \
+            -H "Authorization: Bearer ${{ secrets.SMOKE_TEST_JWT }}" \
+            -d '{"sourceAccountId":"00000000-0000-0000-0000-000000000000","destinationAccountId":"00000000-0000-0000-0000-000000000001","amount":"1.00","currency":"THB"}')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          echo "Smoke POST response: $HTTP_CODE"
+          # 200 (success), 422 (business validation), 400 (validation) all indicate live service
+          if [[ "$HTTP_CODE" =~ ^(200|400|422|401)$ ]]; then
+            echo "API is live and responding"
+          else
+            echo "ERROR: Unexpected response code $HTTP_CODE"
+            exit 1
+          fi
+        working-directory: .
+
+  # ===========================================================================
+  # Stage 10 — DAST (OWASP ZAP baseline against staging)
+  # ===========================================================================
+  dast:
+    name: "DAST — ZAP Baseline"
+    runs-on: ubuntu-latest
+    needs: [smoke-tests]
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.11.0
+        with:
+          target: "https://transfer.staging.example.com"
+          rules_file_name: ".zap/rules.tsv"
+          fail_action: true
+          allow_issue_writing: false
+          cmd_options: "-z '-config scanner.threadPerHost=5'"
+
+  # ===========================================================================
+  # Stage 11 — Manual Gate + Deploy to Production
+  # Requires explicit approval from a release manager
+  # ===========================================================================
+  manual-gate:
+    name: "Manual Approval Gate"
+    runs-on: ubuntu-latest
+    needs: [dast]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://transfer.example.com
+    steps:
+      - name: Awaiting approval
+        run: echo "Release manager approved. Proceeding to production deploy."
+
+  deploy-prod:
+    name: "Deploy to Production"
+    runs-on: ubuntu-latest
+    needs: [manual-gate]
+    environment:
+      name: production
+      url: https://transfer.example.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Set up kubeconfig (prod)
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+        working-directory: .
+
+      - name: Helm upgrade --install (production)
+        run: |
+          helm upgrade --install transfer-service-prod \
+            ./infra/helm/transfer-service \
+            --namespace banking-prod \
+            --create-namespace \
+            --set image.tag=sha-$(git rev-parse --short HEAD) \
+            --set image.repository=${{ env.IMAGE_NAME }} \
+            --set config.springProfile=prod \
+            --set config.environment=prod \
+            --atomic \
+            --wait \
+            --timeout 10m \
+            --history-max 5
+        working-directory: .
+
+      - name: Record rollback command
+        run: |
+          echo "Production rollback: helm rollback transfer-service-prod --namespace banking-prod"

@@ -1,0 +1,24 @@
+# Prometheus configuration for local docker compose environment
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+scrape_configs:
+  - job_name: "transfer-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["transfer-service:9090"]
+    relabel_configs:
+      - target_label: service
+        replacement: transfer-service
+      - target_label: env
+        replacement: local
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -1,0 +1,31 @@
+# ConfigMap for non-sensitive configuration
+# IMPORTANT: No secrets here — secrets are mounted via Vault CSI SecretProviderClass
+# See values.yaml extraVolumes for the CSI mount definition
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "transfer-service.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "transfer-service.labels" . | nindent 4 }}
+data:
+  environment: {{ .Values.config.environment | quote }}
+  spring.profile: {{ .Values.config.springProfile | quote }}
+  log.level: {{ .Values.config.logLevel | quote }}
+
+  # Database (non-secret)
+  db.url: {{ .Values.config.db.url | quote }}
+  db.username: {{ .Values.config.db.username | quote }}
+  db.poolMax: {{ .Values.config.db.poolMax | quote }}
+
+  # Management / actuator port
+  management.port: {{ .Values.config.management.port | quote }}
+  management.address: {{ .Values.config.management.address | quote }}
+
+  # OTel
+  otel.enabled: {{ .Values.config.otel.enabled | quote }}
+  otel.endpoint: {{ .Values.config.otel.endpoint | quote }}
+  otel.samplingRate: {{ .Values.config.otel.samplingRate | quote }}
+
+  # Swagger UI (disabled in non-local)
+  springdoc.swaggerUiEnabled: {{ .Values.config.springdoc.swaggerUiEnabled | quote }}

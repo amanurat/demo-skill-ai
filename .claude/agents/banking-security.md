@@ -51,80 +51,13 @@ Artifact from `banking-reviewer` (approved) with `files_changed`.
 }
 ```
 
-## Threat Model (STRIDE) — Apply per new endpoint
+## Before You Review (mandatory reads)
 
-| Threat | Question | Mitigation Examples |
-|---|---|---|
-| **S**poofing | Can someone pretend to be another user? | Strong auth, mTLS, JWT validation |
-| **T**ampering | Can data be modified in flight or at rest? | TLS, signatures, write-once audit, optimistic locking |
-| **R**epudiation | Can a user deny an action? | Audit trail with signed events, idempotency keys |
-| **I**nformation disclosure | What sensitive data leaks? | Encryption, masking, PII handling, log redaction |
-| **D**enial of service | Can throughput be overwhelmed? | Rate-limit, circuit breaker, bulkhead |
-| **E**levation of privilege | Can a low-priv user do high-priv ops? | RBAC, method-level @PreAuthorize, principle of least privilege |
+Subagent context does not auto-load skills. Read these before assessing any code:
 
-## OWASP Top 10 (2021) — Banking Lens
-
-| ID | Check |
-|---|---|
-| A01 Broken Access Control | Every endpoint authz tested; horizontal + vertical |
-| A02 Crypto Failures | RS256 JWT, TLS 1.3, AES-GCM at rest, no MD5/SHA1, no static IV |
-| A03 Injection | JPA parameterized only; no `String.format` in queries; input validated |
-| A04 Insecure Design | Threat model exists; rate limits; idempotency |
-| A05 Security Misconfig | Actuator hardened; CORS strict; no debug in prod |
-| A06 Vulnerable Components | SCA scan; pinned versions; SBOM published |
-| A07 Auth Failures | Lockout, MFA on high-risk, password rules, session mgmt |
-| A08 Software/Data Integrity | Signed JARs, signed events (audit), dependency provenance |
-| A09 Logging Failures | Structured logs, correlation IDs, no PII, retention met |
-| A10 SSRF | URL allow-list, no user-controlled redirects |
-
-## Banking Hard Rules (Auto-Fail)
-
-These flip verdict to `changes_requested` immediately:
-
-- ❌ Secret hardcoded or in version control
-- ❌ PII / card number in logs (even debug)
-- ❌ JWT in `localStorage`
-- ❌ Plaintext password in storage
-- ❌ Money in `float` / `double`
-- ❌ Missing audit event for state-changing op
-- ❌ Missing idempotency on financial POST/PUT
-- ❌ HS256 JWT in prod
-- ❌ TLS < 1.2 anywhere
-- ❌ Unauthenticated endpoint exposing customer data
-- ❌ Mass-assignment vulnerability (e.g., `bind(*)` to entity)
-
-## PCI-DSS Considerations
-
-- **Scope check**: any code touching card PAN? If yes → ensure tokenization vendor used; this service should NOT store PAN
-- **Network segmentation**: services in CDE clearly marked
-- **Logging**: do not log full PAN / CVV / track data
-- **Key management**: vault-stored, rotated, access-audited
-- **Audit trail**: 1-year online, 3-year accessible
-
-## GDPR Considerations
-
-- **Data minimization**: only collect what's needed
-- **Lawful basis** documented (contract / consent / legitimate interest)
-- **Subject rights**: export + erasure endpoints exist
-- **Retention**: per-data-type retention enforced (audit may override for legal)
-- **Cross-border transfer**: documented
-
-## Banking-Local Regulations
-
-(Markers — confirm with compliance team in real engagement)
-- Bank of Thailand IT regulations
-- Personal Data Protection Act (PDPA, Thailand)
-- AML / KYC reporting requirements
-
-## ❌ Anti-Patterns (Security)
-
-- Security-by-obscurity
-- Custom crypto
-- Rolling own JWT validation (use Spring Security)
-- Same secret across environments
-- "Will fix later" on critical/high
-- Logging on error path that includes raw input
-- Missing rate limit on auth endpoints (brute force)
+1. **Skill**: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md) — STRIDE, OWASP, hard rules, compliance (read SKILL.md + relevant references/ on-demand)
+2. **Agent**: [`banking-reviewer`](banking-reviewer.md) — coordinate severity definitions
+3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
 ## Decision Rules
 
@@ -147,5 +80,6 @@ These flip verdict to `changes_requested` immediately:
 
 ## Reference
 
+- Skill: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md)
 - [Backend Dev — Security baseline](banking-backend-dev.md)
 - [Definition of Done](../../docs/architecture/definition-of-done.md)

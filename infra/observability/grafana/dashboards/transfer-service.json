@@ -1,0 +1,557 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource for transfer-service metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "enable": true,
+        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"$namespace\", deployment=~\"transfer-service.*\"}[2m]) > 0",
+        "hide": false,
+        "iconColor": "blue",
+        "name": "Deployments",
+        "step": "60s",
+        "titleFormat": "Deploy"
+      }
+    ]
+  },
+  "description": "transfer-service — RED metrics, JVM health, HikariCP pool, business counters. Auto-provisioned by banking-devops agent.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "meta": {
+    "owner": "#platform-banking",
+    "service": "transfer-service",
+    "version": "1.0.0"
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "RED Metrics — Rate / Errors / Duration",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "HTTP request rate (requests/second) per URI. Spot traffic drops or flood attacks.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (uri, method) (rate(http_server_requests_seconds_count{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval]))",
+          "legendFormat": "{{method}} {{uri}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Request Rate (RPS) by Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "HTTP 5xx error rate as a percentage of total requests per URI. Alert fires at > 1% for 5 min.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 15
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.005 },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{service=\"$service\", namespace=\"$namespace\", status=~\"5..\"}[$__rate_interval]))\n/\nsum by (uri) (rate(http_server_requests_seconds_count{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval]))",
+          "legendFormat": "5xx rate {{uri}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{service=\"$service\", namespace=\"$namespace\", status=~\"4..\"}[$__rate_interval]))\n/\nsum by (uri) (rate(http_server_requests_seconds_count{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval]))",
+          "legendFormat": "4xx rate {{uri}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Error Rate by Endpoint (5xx + 4xx)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Latency histogram quantiles p50 / p95 / p99 by URI. SLA: p95 < 1000ms, p99 < 3000ms.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "linear",
+            "lineWidth": 2
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "red", "value": 1.0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.50, sum by (le, uri) (rate(http_server_requests_seconds_bucket{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{uri}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{uri}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{uri}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Latency p50 / p95 / p99 by Endpoint",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 101,
+      "title": "JVM Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "JVM heap: used vs committed vs max. Sustained used > 85% of max indicates GC pressure.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineInterpolation": "linear", "lineWidth": 2 },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "jvm_memory_used_bytes{area=\"heap\", service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "heap used {{id}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "jvm_memory_committed_bytes{area=\"heap\", service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "heap committed {{id}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "jvm_memory_max_bytes{area=\"heap\", service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "heap max {{id}}",
+          "refId": "C"
+        }
+      ],
+      "title": "JVM Heap — Used / Committed / Max",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Average GC pause duration. Alert fires when average > 500ms for 1 minute.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineInterpolation": "linear", "lineWidth": 2 },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.25 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "rate(jvm_gc_pause_seconds_sum{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])\n/\nrate(jvm_gc_pause_seconds_count{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])",
+          "legendFormat": "avg GC pause {{action}} {{cause}}",
+          "refId": "A"
+        }
+      ],
+      "title": "GC Pause Duration (avg)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Database — HikariCP Connection Pool",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "HikariCP connection pool: active, idle, pending. Alert if active approaches maximum-pool-size.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "active" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "idle" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "hikaricp_connections_active{service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "active",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "hikaricp_connections_idle{service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "idle",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "hikaricp_connections_pending{service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "pending",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "hikaricp_connections_max{service=\"$service\", namespace=\"$namespace\"}",
+          "legendFormat": "max configured",
+          "refId": "D"
+        }
+      ],
+      "title": "HikariCP — Active / Idle / Pending Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Connection acquisition time distribution. High p99 indicates pool exhaustion or slow startup.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineInterpolation": "linear", "lineWidth": 1 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])))",
+          "legendFormat": "p95 acquisition time",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval])))",
+          "legendFormat": "p99 acquisition time",
+          "refId": "B"
+        }
+      ],
+      "title": "HikariCP — Connection Acquisition Latency",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 103,
+      "title": "Business Metrics — Money Transfers",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Rate of completed transfer operations by result (COMPLETED / FAILED). Alert fires if failed ratio > 5% for 5 min.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*FAILED.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": ".*COMPLETED.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "id": 8,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum by (result) (rate(transfers_completed_total{service=\"$service\", namespace=\"$namespace\"}[$__rate_interval]))",
+          "legendFormat": "transfers {{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Transfer Completion Rate by Result",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Transfer failure ratio = failed / total. Alert threshold at 5%. Distinct from HTTP error rate — a transfer can fail at the business layer while returning HTTP 200 (saga COMPENSATION path).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 0.20,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.02 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 36 },
+      "id": 9,
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(transfers_failed_total{service=\"$service\", namespace=\"$namespace\"}[5m]))\n/\nsum(rate(transfers_total{service=\"$service\", namespace=\"$namespace\"}[5m]))",
+          "legendFormat": "failure ratio",
+          "refId": "A"
+        }
+      ],
+      "title": "Transfer Failure Ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Total transfers completed in the selected time window. KPI for business operations.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 36 },
+      "id": 10,
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "increase(transfers_completed_total{service=\"$service\", namespace=\"$namespace\", result=\"COMPLETED\"}[$__range])",
+          "legendFormat": "completed",
+          "refId": "A"
+        }
+      ],
+      "title": "Transfers Completed (period)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["banking", "transfer-service", "auto-provisioned"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(up, namespace)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Namespace",
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": { "query": "label_values(up, namespace)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "banking.*",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "text": "transfer-service", "value": "transfer-service" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(http_server_requests_seconds_count, service)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Service",
+        "multi": false,
+        "name": "service",
+        "options": [],
+        "query": { "query": "label_values(http_server_requests_seconds_count, service)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(jvm_memory_used_bytes{service=\"$service\"}, instance)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Instance",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": { "query": "label_values(jvm_memory_used_bytes{service=\"$service\"}, instance)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Transfer Service",
+  "uid": "transfer-service-v1",
+  "version": 1,
+  "weekStart": ""
+}

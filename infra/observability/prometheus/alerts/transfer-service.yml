@@ -1,0 +1,183 @@
+# =============================================================================
+# Prometheus Alert Rules — transfer-service
+# Standard: banking-devops-platform/references/observability-dashboards-alerts.md
+#
+# Severities: critical -> PagerDuty on-call; warning -> Slack team channel
+# Every alert has: for: (no instantaneous alerts), runbook annotation, severity label
+# Load into Prometheus Operator via PrometheusRule CRD or rules_files in prometheus.yml
+# =============================================================================
+
+groups:
+  - name: transfer-service.rules
+    interval: 30s
+    rules:
+
+      # -----------------------------------------------------------------------
+      # HighErrorRate
+      # 5xx responses > 1% of total requests for 5 minutes
+      # Runbook: docs/runbooks/transfer-service.md#high-error-rate
+      # -----------------------------------------------------------------------
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (service, namespace) (
+              rate(http_server_requests_seconds_count{
+                service="transfer-service",
+                status=~"5.."
+              }[5m])
+            )
+            /
+            sum by (service, namespace) (
+              rate(http_server_requests_seconds_count{
+                service="transfer-service"
+              }[5m])
+            )
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "5xx error rate > 1% on transfer-service ({{ $labels.namespace }})"
+          description: "transfer-service error rate is {{ $value | humanizePercentage }} — exceeds 1% SLA threshold. Check recent deploys and DB connectivity."
+          runbook: "https://runbooks.example.com/transfer-service/high-error-rate"
+          dashboard: "https://grafana.example.com/d/transfer-service-v1?var-service=transfer-service"
+
+      # -----------------------------------------------------------------------
+      # HighLatencyP95
+      # p95 HTTP latency > 1000ms (1 second SLA) for 5 minutes
+      # Runbook: docs/runbooks/transfer-service.md#high-latency
+      # -----------------------------------------------------------------------
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, service, namespace) (
+              rate(http_server_requests_seconds_bucket{
+                service="transfer-service"
+              }[5m])
+            )
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "p95 latency > SLA (1s) on transfer-service ({{ $labels.namespace }})"
+          description: "transfer-service p95 latency is {{ $value | humanizeDuration }}. SLA requires p95 < 1000ms. Check DB pool, account-service circuit breaker status, and GC pauses."
+          runbook: "https://runbooks.example.com/transfer-service/high-latency"
+          dashboard: "https://grafana.example.com/d/transfer-service-v1?panelId=3"
+
+      # -----------------------------------------------------------------------
+      # HighGcPauses
+      # Average GC pause duration > 500ms for 1 minute
+      # Leading indicator of heap pressure before users see latency
+      # Runbook: docs/runbooks/transfer-service.md#high-gc-pauses
+      # -----------------------------------------------------------------------
+      - alert: HighGcPauses
+        expr: |
+          (
+            rate(jvm_gc_pause_seconds_sum{service="transfer-service"}[1m])
+            /
+            rate(jvm_gc_pause_seconds_count{service="transfer-service"}[1m])
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: warning
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "GC pause average > 500ms on transfer-service"
+          description: "Average GC pause is {{ $value | humanizeDuration }}. Indicates heap pressure. Check JVM heap panel; consider increasing memory limit or tuning MaxRAMPercentage."
+          runbook: "https://runbooks.example.com/transfer-service/high-gc-pauses"
+          dashboard: "https://grafana.example.com/d/transfer-service-v1?panelId=5"
+
+      # -----------------------------------------------------------------------
+      # PodCrashLooping
+      # Pod restart count > 3 within 10 minutes
+      # Catches OOMKill / startup-failure storms
+      # Runbook: docs/runbooks/transfer-service.md#pod-crash-looping
+      # -----------------------------------------------------------------------
+      - alert: PodCrashLooping
+        expr: |
+          increase(
+            kube_pod_container_status_restarts_total{
+              namespace=~"banking-.*",
+              pod=~"transfer-service-.*"
+            }[10m]
+          ) > 3
+        for: 1m
+        labels:
+          severity: critical
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "Pod {{ $labels.pod }} restarted > 3 times in 10 min ({{ $labels.namespace }})"
+          description: "transfer-service pod {{ $labels.pod }} has restarted {{ $value | humanize }} times in the last 10 minutes. Check for OOMKill, startup errors, or liveness probe misconfiguration."
+          runbook: "https://runbooks.example.com/transfer-service/pod-crash-looping"
+
+      # -----------------------------------------------------------------------
+      # TransferFailedRatioHigh
+      # Business-level: failed transfers / total transfers > 5% for 5 minutes
+      # An outage with green infra metrics is still an outage if money stops moving
+      # Runbook: docs/runbooks/transfer-service.md#transfer-failed-ratio-high
+      # -----------------------------------------------------------------------
+      - alert: TransferFailedRatioHigh
+        expr: |
+          (
+            sum(rate(transfers_failed_total{service="transfer-service"}[5m]))
+            /
+            sum(rate(transfers_total{service="transfer-service"}[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "Transfer failure ratio > 5% on transfer-service"
+          description: "Business transfer failure ratio is {{ $value | humanizePercentage }}. Exceeds 5% threshold. Check saga COMPENSATION_FAILED events, account-service health, and DB transaction log."
+          runbook: "https://runbooks.example.com/transfer-service/transfer-failed-ratio-high"
+          dashboard: "https://grafana.example.com/d/transfer-service-v1?panelId=9"
+
+      # -----------------------------------------------------------------------
+      # KafkaLagHigh
+      # Consumer lag > 10,000 messages for 5 minutes (enable when US-007 ships)
+      # Currently INHIBITED — no Kafka consumer in v1; uncomment for US-007
+      # Runbook: docs/runbooks/transfer-service.md#kafka-lag-high
+      # -----------------------------------------------------------------------
+      # - alert: KafkaLagHigh
+      #   expr: |
+      #     sum by (topic, service) (
+      #       kafka_consumer_lag{service="transfer-service"}
+      #     ) > 10000
+      #   for: 5m
+      #   labels:
+      #     severity: warning
+      #     team: platform-banking
+      #     service: transfer-service
+      #   annotations:
+      #     summary: "Kafka consumer lag > 10k on topic {{ $labels.topic }}"
+      #     description: "Consumer lag {{ $value }} on {{ $labels.topic }}. Downstream eventual consistency is degrading. Check consumer thread health and partition assignment."
+      #     runbook: "https://runbooks.example.com/transfer-service/kafka-lag-high"
+
+      # -----------------------------------------------------------------------
+      # HikariPoolExhaustion (supplemental — not in base standard but critical
+      # for banking services with synchronous DB paths)
+      # Active connections >= max pool size for 2 minutes
+      # -----------------------------------------------------------------------
+      - alert: HikariPoolExhaustion
+        expr: |
+          hikaricp_connections_active{service="transfer-service"}
+          >=
+          hikaricp_connections_max{service="transfer-service"}
+        for: 2m
+        labels:
+          severity: warning
+          team: platform-banking
+          service: transfer-service
+        annotations:
+          summary: "HikariCP pool fully active on transfer-service"
+          description: "All {{ $value }} connections in the HikariCP pool (transfer-hikari) are active. Connection wait timeouts will start after 5s. Investigate slow queries or missing transaction commits."
+          runbook: "https://runbooks.example.com/transfer-service/hikari-pool-exhaustion"

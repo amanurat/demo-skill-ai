@@ -67,53 +67,14 @@ Handoff artifact to **both** `banking-backend-dev` and `banking-frontend-dev`:
 6. **Implementation notes** — point developers at patterns to use
 7. **Threat-model** new endpoints (STRIDE)
 
-## OpenAPI Standards
+## Before You Specify (mandatory reads)
 
-- Every endpoint: `summary`, `description`, `operationId` (camelCase)
-- Request bodies + responses: schema $ref, examples
-- All errors return **Problem-Detail (RFC 7807)** schema
-- Security: `bearerAuth` (JWT) on protected endpoints
-- Pagination: `?page=&size=&sort=` + `X-Total-Count` header
-- Headers: `Idempotency-Key` on all POST/PUT/PATCH financial endpoints
-- `X-Request-Id` echoed in all responses
-- Version in URI: `/api/v1/...`
+Subagent context does not auto-load skills. Read these before authoring OpenAPI specs or migrations:
 
-## DB Schema Standards
-
-- Primary key: `BIGSERIAL` or `UUID` (banking → UUID for distribution)
-- `created_at`, `updated_at` `TIMESTAMPTZ NOT NULL DEFAULT now()`
-- Optimistic lock: `version BIGINT NOT NULL DEFAULT 0` on money entities
-- Money: `NUMERIC(19,4)` — never `FLOAT`
-- Currency: `CHAR(3)` ISO 4217
-- Audit: foreign-key to `audit_log_id` where applicable
-- Indexes: explicit; document reason in migration comment
-- Constraints: NOT NULL, CHECK, UNIQUE wherever applicable
-
-## Flyway Migration Rules
-
-- One change per file
-- Naming: `V<seq>__<verb>_<object>.sql` (e.g., `V001__create_transfers.sql`)
-- Reversible: include `down_sql` in handoff payload (Flyway itself doesn't run it; for rollback runbook)
-- Never edit a released migration — add a new one
-- Comments at top: ticket ID, author agent, rationale
-
-## Banking-Specific Decisions to Specify
-
-- **Idempotency-Key strategy** — header name, TTL, scope (per user? global?)
-- **Error code taxonomy** — `INSUFFICIENT_FUNDS`, `DAILY_LIMIT_EXCEEDED`, `PAYEE_NOT_FOUND`, etc.
-- **Retry strategy** — which operations are retryable, max attempts, backoff
-- **Saga step granularity** — what's a step, what's its compensation
-- **Audit event shape** — required fields for every audit record
-
-## ❌ Anti-Patterns
-
-- Vague OpenAPI ("returns user data")
-- Missing error responses (only 200 documented)
-- Non-reversible migrations without a down plan
-- `FLOAT` / `DOUBLE` for money
-- Implicit casts / no constraints
-- Skipping ADRs for "obvious" choices that aren't obvious later
-- `DELETE`-without-archive on audit / financial tables
+1. **Skill**: [`openapi-flyway-standards`](../skills/openapi-flyway-standards/SKILL.md) — OpenAPI conventions, DB schema design, Flyway authoring
+2. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — naming conventions for tables, endpoints, migrations, topics
+3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
+4. **Docs**: [ADR template](../../docs/adr/README.md) — when writing ADRs as part of your handoff
 
 ## Decision Rules
 
@@ -137,6 +98,7 @@ Handoff artifact to **both** `banking-backend-dev` and `banking-frontend-dev`:
 
 ## Reference
 
+- Skill: [`openapi-flyway-standards`](../skills/openapi-flyway-standards/SKILL.md)
 - [Project Structure](../../docs/architecture/project-structure.md)
 - [Handoff Schema](../../docs/architecture/handoff-schema.md)
 - [ADR Template](../../docs/adr/README.md)

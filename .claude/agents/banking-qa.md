@@ -52,73 +52,13 @@ Artifact from `banking-security` (approved) with code + tests already present.
 6. **Bug-loopback** if regression found
 7. **Sign off** when all thresholds met
 
-## Test Strategy (per feature)
+## Before You Test (mandatory reads)
 
-### Test Pyramid
-```
-       /\
-      /E2E\        ← 8 tests (happy paths + 1-2 critical errors)
-     /------\
-    /Contract\     ← One per consumer/provider pair
-   /----------\
-  /Integration \   ← Per endpoint + Saga happy/sad paths
- /--------------\
-/    Unit        \ ← ≥ 80% overall, ≥ 95% money paths
-------------------
-```
+Subagent context does not auto-load skills. Read these before writing tests or assessing coverage:
 
-### Banking-Specific Test Cases
-
-For Money Transfer (template):
-
-| Test | Type | Why |
-|---|---|---|
-| `transferSucceeds_whenSufficientBalance` | Integration | Happy path |
-| `transferFails_whenInsufficientBalance` | Integration | Validation |
-| `transferIsIdempotent_whenSameKeyRetried` | Integration | Critical correctness |
-| `transferIsRejected_whenDailyLimitExceeded` | Integration | Business rule |
-| `sagaCompensates_whenLedgerCreditFails` | Integration | Distributed tx |
-| `auditEvent_isEmittedForEveryAttempt` | Integration | Compliance |
-| `concurrentTransfers_doNotDoubleDebit` | Integration | Concurrency |
-| `transferCompletes_underP95Sla` | Performance | SLA |
-| `frontendConfirmsBeforeSubmit` | E2E | UX safety |
-| `frontendShowsCorrectErrorMessages` | E2E | UX |
-
-### Coverage Rules
-
-- Overall ≥ 80%
-- Money-handling code ≥ 95%
-- Mutation score ≥ 70% on money paths
-- Branches: all error paths have ≥ 1 test
-
-### Performance SLA
-
-- p95 ≤ feature SLA
-- p99 ≤ 2× p95
-- Throughput: meet target RPS without degradation
-- Error rate < 0.1%
-
-## Best Practices
-
-- **Real DB + Kafka via Testcontainers** — H2 / embedded Kafka diverge from prod
-- **Test naming**: behavior, not method (`should_X_when_Y`)
-- **One assertion per test** when possible
-- **Test data builders** for entity creation
-- **Reset state** between tests (`@DirtiesContext` or transactional rollback)
-- **No flaky tests** — fix or quarantine immediately
-- **Fast unit tests** (< 100ms each); slow tests separated
-
-## ❌ Anti-Patterns
-
-- Tests that mock the class under test
-- Tests asserting nothing (passing always)
-- Test names like `test1`, `testTransfer`
-- Sleep-based waits (use Awaitility)
-- Sharing mutable state between tests
-- H2 instead of Testcontainers Postgres
-- Embedded Kafka instead of Testcontainers Kafka
-- Snapshot tests for everything (overuse)
-- Disabling tests instead of fixing them
+1. **Skill**: [`banking-test-automation`](../skills/banking-test-automation/SKILL.md) — test pyramid, banking test cases, coverage rules, anti-patterns
+2. **Skill**: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) — backend Testing Policy table (coordinate thresholds)
+3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md)
 
 ## Decision Rules
 
@@ -144,6 +84,9 @@ For Money Transfer (template):
 
 ## Reference
 
+- Skill: [`banking-test-automation`](../skills/banking-test-automation/SKILL.md)
+- Skill: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) — Testing Policy table
 - [Definition of Done](../../docs/architecture/definition-of-done.md)
-- [Backend Dev — Testing Policy](banking-backend-dev.md)
-- [Frontend Dev — Testing](banking-frontend-dev.md)
+- [Handoff Schema](../../docs/architecture/handoff-schema.md)
+- [Backend Dev](banking-backend-dev.md)
+- [Frontend Dev](banking-frontend-dev.md)

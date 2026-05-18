@@ -1,0 +1,569 @@
+openapi: 3.0.3
+info:
+  title: Transfer Service API
+  description: |
+    Intra-bank THB money transfer API for retail internet banking.
+    Implements the Saga-driven money movement flow with idempotency, per-tx /
+    daily limits, and audit-grade observability.
+
+    Scope of this version:
+      - POST /api/v1/transfers (US-001 happy path + US-003 idempotency)
+      - GET  /api/v1/transfers/{transferId} (status polling)
+    Stub endpoints (planned, NOT implemented in this iteration):
+      - GET  /api/v1/payees/lookup        (x-status: planned, US-010)
+      - GET  /api/v1/transfers             (x-status: planned, US-001 history)
+
+    Error model: RFC 7807 Problem Details (application/problem+json).
+    Auth: OAuth2 / OIDC bearer JWT (RS256, 15-min TTL).
+  version: 1.0.0
+  contact:
+    name: Payments Platform Team
+    email: payments-platform@bank.local
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.bank.local
+    description: Production
+  - url: https://api.staging.bank.local
+    description: Staging
+tags:
+  - name: Transfers
+    description: Intra-bank money transfer operations
+  - name: Payees
+    description: Saved payee management (planned)
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/transfers:
+    post:
+      tags: [Transfers]
+      summary: Create an intra-bank transfer
+      description: |
+        Initiates a THB money transfer between two intra-bank accounts.
+        The request MUST carry an `Idempotency-Key` header (UUID v4) so that
+        client retries are safe — see ADR-002 + ADR-013.
+
+        Latency target: p95 < 1s end-to-end. The endpoint runs the full Saga
+        synchronously (debit + credit) and returns the final status on success.
+        On a transient downstream failure (account-service circuit open) the
+        endpoint returns 503 with `Retry-After`; the client SHOULD retry with
+        the same Idempotency-Key.
+
+        Error codes (machine-readable in `code`):
+          INSUFFICIENT_FUNDS, TRANSACTION_LIMIT_EXCEEDED, DAILY_LIMIT_EXCEEDED,
+          ACCOUNT_FROZEN, SOURCE_ACCOUNT_FROZEN, IDEMPOTENCY_KEY_CONFLICT,
+          MEMO_TOO_LONG, PAYEE_NOT_FOUND, CONCURRENT_CONFLICT, COMPENSATION_TRIGGERED.
+      operationId: createTransfer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+            example:
+              sourceAccountId: "11111111-1111-1111-1111-111111111111"
+              destinationAccountId: "22222222-2222-2222-2222-222222222222"
+              amount: "1500.0000"
+              currency: "THB"
+              memo: "Rent payment May 2026"
+              channel: "INTERNET_BANKING"
+      responses:
+        '200':
+          description: |
+            Transfer completed (synchronous happy path). Body always carries
+            `idempotencyStatus` so client can distinguish first-write vs replay.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+              examples:
+                firstWrite:
+                  summary: First-write success
+                  value:
+                    transferId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    referenceNumber: "TRF-20260518-0000001A"
+                    status: "COMPLETED"
+                    amount: "1500.0000"
+                    currency: "THB"
+                    sourceAccountId: "11111111-1111-1111-1111-111111111111"
+                    destinationAccountId: "22222222-2222-2222-2222-222222222222"
+                    memo: "Rent payment May 2026"
+                    completedAt: "2026-05-18T13:14:25.123Z"
+                    idempotencyStatus: "FIRST_WRITE"
+                idempotentReplay:
+                  summary: Idempotent replay (US-003 AC1)
+                  value:
+                    transferId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                    referenceNumber: "TRF-20260518-0000001A"
+                    status: "COMPLETED"
+                    amount: "1500.0000"
+                    currency: "THB"
+                    sourceAccountId: "11111111-1111-1111-1111-111111111111"
+                    destinationAccountId: "22222222-2222-2222-2222-222222222222"
+                    memo: "Rent payment May 2026"
+                    completedAt: "2026-05-18T13:14:25.123Z"
+                    idempotencyStatus: "IDEMPOTENT_REPLAY"
+        '400':
+          description: Validation failure (e.g. MEMO_TOO_LONG, malformed UUID)
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              example:
+                type: "https://errors.bank.local/memo-too-long"
+                title: "Memo too long"
+                status: 400
+                detail: "Memo length 257 exceeds the 200-character maximum."
+                instance: "/api/v1/transfers"
+                code: "MEMO_TOO_LONG"
+                traceId: "00-7e3f9a1b2c3d4e5f6789abcdef012345-0123456789abcdef-01"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: |
+            Idempotency-Key conflict (US-003 AC4) — same key submitted with a
+            different request payload.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              example:
+                type: "https://errors.bank.local/idempotency-key-conflict"
+                title: "Idempotency-Key conflict"
+                status: 409
+                detail: "Idempotency-Key was previously used with a different request payload."
+                instance: "/api/v1/transfers"
+                code: "IDEMPOTENCY_KEY_CONFLICT"
+                traceId: "00-7e3f9a1b...-01"
+        '422':
+          description: |
+            Business rule violation. Inspect `code` for the specific reason:
+            INSUFFICIENT_FUNDS, TRANSACTION_LIMIT_EXCEEDED, DAILY_LIMIT_EXCEEDED,
+            SOURCE_ACCOUNT_FROZEN, ACCOUNT_FROZEN, PAYEE_NOT_FOUND,
+            CONCURRENT_CONFLICT, COMPENSATION_TRIGGERED.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              examples:
+                insufficientFunds:
+                  summary: US-002 — insufficient balance
+                  value:
+                    type: "https://errors.bank.local/insufficient-funds"
+                    title: "Insufficient funds"
+                    status: 422
+                    detail: "Source account available balance is below the requested amount."
+                    instance: "/api/v1/transfers"
+                    code: "INSUFFICIENT_FUNDS"
+                    traceId: "00-...-01"
+                dailyLimitExceeded:
+                  summary: US-005 — daily limit exceeded
+                  value:
+                    type: "https://errors.bank.local/daily-limit-exceeded"
+                    title: "Daily limit exceeded"
+                    status: 422
+                    detail: "This transfer would push your daily cumulative transfers past the configured limit."
+                    instance: "/api/v1/transfers"
+                    code: "DAILY_LIMIT_EXCEEDED"
+                    traceId: "00-...-01"
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: |
+            Downstream dependency unavailable (account-service circuit open or
+            time-limiter hit). Client SHOULD retry with the same Idempotency-Key
+            after `Retry-After` seconds.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+            Retry-After:
+              schema: { type: integer, example: 2 }
+              description: Seconds to wait before retrying.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              example:
+                type: "https://errors.bank.local/dependency-unavailable"
+                title: "Service temporarily unavailable"
+                status: 503
+                detail: "Downstream account-service is unavailable. Please retry."
+                instance: "/api/v1/transfers"
+                code: "DEPENDENCY_UNAVAILABLE"
+                traceId: "00-...-01"
+  /api/v1/transfers/{transferId}:
+    get:
+      tags: [Transfers]
+      summary: Get transfer status
+      description: |
+        Fetches the current status of a transfer by id. Used by the client to
+        poll after a 503 or socket-level timeout to determine whether the
+        original request committed.
+
+        Authorization: the calling JWT subject MUST be the initiator of the
+        transfer (or hold the ops:transfers:read scope).
+      operationId: getTransfer
+      parameters:
+        - $ref: '#/components/parameters/TransferId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Current transfer state
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferResponse' }
+              example:
+                transferId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                referenceNumber: "TRF-20260518-0000001A"
+                status: "COMPLETED"
+                amount: "1500.0000"
+                currency: "THB"
+                sourceAccountId: "11111111-1111-1111-1111-111111111111"
+                destinationAccountId: "22222222-2222-2222-2222-222222222222"
+                memo: "Rent payment May 2026"
+                completedAt: "2026-05-18T13:14:25.123Z"
+                idempotencyStatus: "FIRST_WRITE"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Transfer not found
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+              example:
+                type: "https://errors.bank.local/transfer-not-found"
+                title: "Transfer not found"
+                status: 404
+                detail: "No transfer exists with id a1b2c3d4-..."
+                instance: "/api/v1/transfers/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                code: "TRANSFER_NOT_FOUND"
+                traceId: "00-...-01"
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/payees/lookup:
+    get:
+      tags: [Payees]
+      summary: Look up payee details by account number (PLANNED)
+      description: |
+        Returns masked name + account type for a given intra-bank account number.
+        NOT implemented in this iteration — stub only. See US-010.
+      operationId: lookupPayee
+      x-status: planned
+      x-planned-story: US-010
+      parameters:
+        - in: query
+          name: accountNumber
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9]{10}$"
+            example: "1234567890"
+      responses:
+        '501':
+          description: Not implemented in this iteration
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+  /api/v1/transfers/history:
+    get:
+      tags: [Transfers]
+      summary: List transfers for the current customer (PLANNED)
+      description: |
+        Paginated list of the caller's transfers. NOT implemented in this
+        iteration — stub only. See US-001 history requirement.
+      operationId: listTransfers
+      x-status: planned
+      x-planned-story: US-001-history
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: sort
+          schema: { type: string, example: "createdAt,desc" }
+      responses:
+        '501':
+          description: Not implemented in this iteration
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetail' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OAuth2 / OIDC RS256 access token issued by identity-service.
+        TTL 15 minutes; refresh-token rotation per ADR-002 of solution architect.
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: "d2c3b4a5-1111-4222-9333-444455556666"
+      description: |
+        Client-generated UUID v4. Scope: per (customer_id, key). TTL: 24h.
+        Reusing the same key with the same payload returns the cached response
+        (idempotencyStatus=IDEMPOTENT_REPLAY). Reusing with a different payload
+        returns 409 IDEMPOTENCY_KEY_CONFLICT. See ADR-013.
+    RequestId:
+      in: header
+      name: X-Request-Id
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+        example: "client-12345-abcde"
+      description: |
+        Optional client-provided correlation id. If absent, the gateway / service
+        assigns one. Always echoed in the response `X-Request-Id` header and
+        included in the W3C `traceparent` propagation.
+    TransferId:
+      in: path
+      name: transferId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Server-assigned transfer identifier (UUID v4).
+  headers:
+    XRequestId:
+      schema: { type: string }
+      description: Echoed correlation id. Present on every response.
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: "https://errors.bank.local/unauthorized"
+            title: "Unauthorized"
+            status: 401
+            detail: "Bearer token missing, expired, or signature invalid."
+            code: "UNAUTHORIZED"
+            traceId: "00-...-01"
+    Forbidden:
+      description: Authenticated but not authorized for this resource
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: "https://errors.bank.local/forbidden"
+            title: "Forbidden"
+            status: 403
+            detail: "You do not own this resource and lack the required scope."
+            code: "FORBIDDEN"
+            traceId: "00-...-01"
+    RateLimited:
+      description: Rate limit exceeded (60 req/min per customer at gateway)
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before next request.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: "https://errors.bank.local/rate-limited"
+            title: "Too many requests"
+            status: 429
+            detail: "Per-customer rate limit of 60 requests/minute exceeded."
+            code: "RATE_LIMITED"
+            traceId: "00-...-01"
+    InternalError:
+      description: Unexpected server error
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/XRequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          example:
+            type: "https://errors.bank.local/internal-error"
+            title: "Internal server error"
+            status: 500
+            detail: "An unexpected error occurred. The request was not committed."
+            code: "INTERNAL_ERROR"
+            traceId: "00-...-01"
+  schemas:
+    TransferRequest:
+      type: object
+      required: [sourceAccountId, destinationAccountId, amount, currency]
+      properties:
+        sourceAccountId:
+          type: string
+          format: uuid
+          description: UUID of the customer's source account.
+        destinationAccountId:
+          type: string
+          format: uuid
+          description: UUID of the intra-bank destination account.
+        amount:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]{1,4})?$"
+          minLength: 1
+          maxLength: 23
+          description: |
+            Decimal money amount as a string (JSON number would lose precision).
+            Must be > 0 and <= per-tx limit. Scale up to 4 decimal places.
+          example: "1500.0000"
+        currency:
+          type: string
+          enum: [THB]
+          description: ISO 4217. v1 supports THB only.
+          example: "THB"
+        memo:
+          type: string
+          maxLength: 200
+          description: Optional free-text memo, max 200 characters (US-001 AC3/AC4).
+          example: "Rent payment May 2026"
+        channel:
+          type: string
+          enum: [INTERNET_BANKING, MOBILE_BANKING]
+          default: INTERNET_BANKING
+          description: Origination channel (audited).
+    TransferResponse:
+      type: object
+      required: [transferId, referenceNumber, status, amount, currency, sourceAccountId, destinationAccountId, idempotencyStatus]
+      properties:
+        transferId:
+          type: string
+          format: uuid
+          description: Server-assigned transfer id.
+        referenceNumber:
+          type: string
+          description: Human-readable reference TRF-YYYYMMDD-XXXXXXXX.
+          example: "TRF-20260518-0000001A"
+        status:
+          $ref: '#/components/schemas/TransferStatus'
+        amount:
+          type: string
+          pattern: "^[0-9]+(\\.[0-9]{1,4})?$"
+          example: "1500.0000"
+        currency:
+          type: string
+          enum: [THB]
+        sourceAccountId:
+          type: string
+          format: uuid
+        destinationAccountId:
+          type: string
+          format: uuid
+        memo:
+          type: string
+          nullable: true
+          maxLength: 200
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO-8601 UTC timestamp when status became terminal.
+        idempotencyStatus:
+          type: string
+          enum: [FIRST_WRITE, IDEMPOTENT_REPLAY]
+          description: |
+            FIRST_WRITE — this response is from executing the request now.
+            IDEMPOTENT_REPLAY — cached response served for a duplicate key.
+        failureReason:
+          type: string
+          nullable: true
+          description: Populated when status is FAILED / FAILED_COMPENSATED / COMPENSATION_FAILED.
+          example: "INSUFFICIENT_FUNDS"
+    TransferStatus:
+      type: string
+      enum:
+        - PENDING
+        - COMPLETED
+        - FAILED
+        - COMPENSATION_PENDING
+        - FAILED_COMPENSATED
+        - COMPENSATION_FAILED
+      description: |
+        State machine:
+          PENDING -> COMPLETED                        (happy path)
+          PENDING -> FAILED                           (rejected pre-debit)
+          PENDING -> COMPENSATION_PENDING -> FAILED_COMPENSATED   (saga rollback ok)
+          PENDING -> COMPENSATION_PENDING -> COMPENSATION_FAILED  (double fault)
+    ProblemDetail:
+      type: object
+      description: RFC 7807 Problem Details extended with `code` and `traceId`.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: A URI reference identifying the problem type.
+          example: "https://errors.bank.local/insufficient-funds"
+        title:
+          type: string
+          description: Short human-readable summary.
+          example: "Insufficient funds"
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          example: 422
+        detail:
+          type: string
+          description: Human-readable explanation. SAFE for end-user display (no PII / no secrets).
+          example: "Source account balance is below the requested amount."
+        instance:
+          type: string
+          format: uri
+          description: URI of the specific occurrence of the problem.
+          example: "/api/v1/transfers"
+        code:
+          type: string
+          description: Machine-readable error code from the taxonomy.
+          enum:
+            - INSUFFICIENT_FUNDS
+            - TRANSACTION_LIMIT_EXCEEDED
+            - DAILY_LIMIT_EXCEEDED
+            - ACCOUNT_FROZEN
+            - SOURCE_ACCOUNT_FROZEN
+            - ACCOUNT_INACTIVE
+            - SOURCE_ACCOUNT_INACTIVE
+            - IDEMPOTENCY_KEY_CONFLICT
+            - MEMO_TOO_LONG
+            - PAYEE_NOT_FOUND
+            - TRANSFER_NOT_FOUND
+            - CONCURRENT_CONFLICT
+            - COMPENSATION_TRIGGERED
+            - DEPENDENCY_UNAVAILABLE
+            - RATE_LIMITED
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - INTERNAL_ERROR
+            - VALIDATION_ERROR
+        traceId:
+          type: string
+          description: W3C traceparent id for correlation across services.
+          example: "00-7e3f9a1b2c3d4e5f6789abcdef012345-0123456789abcdef-01"

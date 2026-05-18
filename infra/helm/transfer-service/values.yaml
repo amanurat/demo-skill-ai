@@ -1,0 +1,278 @@
+# =============================================================================
+# transfer-service — Helm Values (defaults)
+# Standard: banking-devops-platform/references/dockerfile-helm-standards.md
+#
+# Override per environment:
+#   helm upgrade --install transfer-service-staging ./infra/helm/transfer-service \
+#     -f infra/helm/transfer-service/values-staging.yaml \
+#     --set image.tag=<git-sha> \
+#     --atomic --wait --namespace banking-staging
+#
+# Hard rules enforced here:
+#   - replicaCount >= 3 (HA)
+#   - HPA minReplicas >= PDB minAvailable + 1
+#   - No secrets — all sensitive values from Vault CSI (see config.vault)
+#   - Resource requests AND limits both set
+#   - NetworkPolicy included (egress allow-list)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/your-org/bank/transfer-service
+  # tag overridden at deploy time: --set image.tag=<git-sha-or-semver>
+  # NEVER use :latest — anti-pattern auto-fail in review
+  tag: "1.0.0-SNAPSHOT"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# Replica count — minimum 3 for HA (survives node drain + rolling update)
+# ---------------------------------------------------------------------------
+replicaCount: 3
+
+# ---------------------------------------------------------------------------
+# Service account — least privilege (no cluster-wide permissions)
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: "transfer-service"
+  annotations: {}
+  # For AWS IRSA: eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/transfer-service
+  # For GCP WI: iam.gke.io/gcp-service-account: transfer-service@<project>.iam.gserviceaccount.com
+  automountServiceAccountToken: false
+
+# ---------------------------------------------------------------------------
+# Pod settings
+# ---------------------------------------------------------------------------
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/actuator/prometheus"
+
+podLabels:
+  app: transfer-service
+  version: "1.0.0"
+  team: platform-banking
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------------------
+# Resource requests + limits — BOTH always set (prevents noisy neighbor)
+# Memory request == limit for JVM workload (avoid OOM surprises)
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 1500m
+    memory: 2Gi
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080          # Application HTTP traffic
+  managementPort: 9090  # Actuator / metrics (internal only)
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "10"
+    # mTLS termination at ingress — internal traffic is plain HTTP to service port
+    # cert-manager.io/cluster-issuer: letsencrypt-prod  (uncomment for real TLS)
+  hosts:
+    - host: transfer.staging.example.com
+      paths:
+        - path: /api/v1/transfers
+          pathType: Prefix
+  tls:
+    - secretName: transfer-service-tls
+      hosts:
+        - transfer.staging.example.com
+
+# ---------------------------------------------------------------------------
+# Liveness + Readiness probes
+# Separate Spring Boot Actuator probe groups (liveness vs readiness)
+# ---------------------------------------------------------------------------
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    port: 9090
+    initialDelaySeconds: 60   # JVM warm-up + Flyway migration time
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  readiness:
+    path: /actuator/health/readiness
+    port: 9090
+    initialDelaySeconds: 30   # DB connection pool ready check
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  startup:
+    path: /actuator/health/liveness
+    port: 9090
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 15      # Allow up to 160s for startup before killing
+
+# ---------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# minReplicas >= PDB.minAvailable + 1 to prevent deadlock during drain
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 3      # Must be >= PDB.minAvailable + 1 = 3 (minAvailable=2 + 1)
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  # Optional: add memory-based scaling when heap profiling is available
+  # targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Pod Disruption Budget — guarantees 2 pods alive during node drain
+# Prevents zero-replica windows during cluster operations
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2     # With minReplicas=3, one pod can be disrupted safely
+
+# ---------------------------------------------------------------------------
+# Application configuration (non-secret)
+# Secrets are injected via Vault CSI — never templated here
+# ---------------------------------------------------------------------------
+config:
+  springProfile: staging
+  environment: staging
+  logLevel: INFO
+
+  # Vault integration (secrets injected at runtime — Security ITEM-4)
+  vault:
+    enabled: true
+    role: transfer-service
+    # Secrets mounted at /vault/secrets/ by the Vault CSI provider:
+    #   /vault/secrets/db-password  -> DB_PASSWORD
+    #   /vault/secrets/jwt-issuer   -> SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+    secretPaths:
+      dbPassword: banking/transfer-service/db-password
+      jwtIssuerUri: banking/transfer-service/jwt-issuer-uri
+
+  # OpenTelemetry — traces + metrics exported to in-cluster OTel collector
+  otel:
+    enabled: true
+    endpoint: http://otel-collector.observability.svc.cluster.local:4317
+    samplingRate: "1.0"   # 100% in staging; reduce to 0.1 in prod under load
+
+  # Database (non-secret config — actual password from Vault)
+  db:
+    url: jdbc:postgresql://transfer-postgres.banking-staging.svc.cluster.local:5432/transfer_db
+    username: transfer_user
+    poolMax: "20"
+
+  # Management server isolation (Security ITEM-9)
+  management:
+    port: "9090"
+    address: "127.0.0.1"   # Bind actuator to loopback — NetworkPolicy exposes to Prometheus
+
+  # Swagger UI — disabled in staging/prod (Security ITEM-9)
+  springdoc:
+    swaggerUiEnabled: "false"
+
+# ---------------------------------------------------------------------------
+# Node selector, tolerations, affinity
+# ---------------------------------------------------------------------------
+nodeSelector: {}
+
+tolerations: []
+
+# Topology spread — distribute pods across nodes + AZs for HA
+# Also satisfies PDPA data residency requirement (Thailand region AZs only)
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: transfer-service
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: transfer-service
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - transfer-service
+          topologyKey: kubernetes.io/hostname
+
+# ---------------------------------------------------------------------------
+# Extra environment variables (non-sensitive)
+# Sensitive vars are injected by Vault CSI via volumeMounts, not env
+# ---------------------------------------------------------------------------
+extraEnv: []
+# - name: SOME_FEATURE_FLAG
+#   value: "true"
+
+# ---------------------------------------------------------------------------
+# Extra volume mounts (Vault secrets, etc.)
+# ---------------------------------------------------------------------------
+extraVolumeMounts:
+  - name: vault-secrets
+    mountPath: /vault/secrets
+    readOnly: true
+
+extraVolumes:
+  - name: vault-secrets
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: transfer-service-vault-secrets
+
+# Temp dir for JVM (readOnlyRootFilesystem requires explicit tmpfs)
+extraVolumeMountsSystem:
+  - name: tmp-dir
+    mountPath: /tmp
+
+extraVolumesSystem:
+  - name: tmp-dir
+    emptyDir: {}

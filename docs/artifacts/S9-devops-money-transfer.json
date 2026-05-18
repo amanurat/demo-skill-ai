@@ -1,0 +1,144 @@
+{
+  "artifact_id": "f3a91c82-7d4e-4b15-a6e3-9c8b0d5f2e71",
+  "from_agent": "banking-devops",
+  "to_agent": "banking-player",
+  "phase": "DEPLOYMENT",
+  "feature": "money-transfer",
+  "payload": {
+    "deployment": {
+      "environment": "local (smoke-tested); staging target pending 5 backend gates",
+      "image_tag": "bank/transfer-service:1.0.0-SNAPSHOT",
+      "image_digest": "sha256:7c55921384f4b04f196aaa6613a83a2fe99719e000f9ef34227034b7282e41eb",
+      "k8s_namespace": "banking-staging (target — not deployed; gated)",
+      "url": "https://transfer.staging.example.com (target — not reachable yet)",
+      "smoke_tests": {
+        "status": "partial_pass",
+        "liveness": "200 OK",
+        "readiness": "200 OK",
+        "prometheus_metrics": "200 OK (14 http_server_requests series confirmed)",
+        "post_without_idempotency_key": "403 (expected — SecurityConfig blocks unauthenticated; JWT deferred to US-006)",
+        "post_with_idempotency_key": "403 (expected — same; not a defect in infra config)",
+        "docker_build": "succeeded (multi-stage eclipse-temurin:21-jdk-alpine -> jre-alpine)",
+        "flyway_migrations": "all 5 applied successfully after schema mismatch fixes (see migration_fixes)"
+      },
+      "dashboards": [
+        "infra/observability/grafana/dashboards/transfer-service.json"
+      ],
+      "alert_rules": [
+        "infra/observability/prometheus/alerts/transfer-service.yml"
+      ],
+      "rollback_command": "helm rollback transfer-service-staging --namespace banking-staging"
+    },
+    "ci_changes": [
+      ".github/workflows/transfer-service-ci.yml"
+    ],
+    "infra_changes": [
+      "backend/transfer-service/Dockerfile",
+      "backend/transfer-service/.dockerignore",
+      "infra/docker-compose.yml",
+      "infra/observability/prometheus/prometheus-local.yml",
+      "infra/observability/grafana/provisioning/datasources/prometheus.yml",
+      "infra/observability/grafana/provisioning/dashboards/dashboards.yml",
+      "infra/observability/grafana/dashboards/transfer-service.json",
+      "infra/observability/prometheus/alerts/transfer-service.yml",
+      "infra/helm/transfer-service/Chart.yaml",
+      "infra/helm/transfer-service/values.yaml",
+      "infra/helm/transfer-service/templates/_helpers.tpl",
+      "infra/helm/transfer-service/templates/deployment.yaml",
+      "infra/helm/transfer-service/templates/service.yaml",
+      "infra/helm/transfer-service/templates/ingress.yaml",
+      "infra/helm/transfer-service/templates/hpa.yaml",
+      "infra/helm/transfer-service/templates/pdb.yaml",
+      "infra/helm/transfer-service/templates/networkpolicy.yaml",
+      "infra/helm/transfer-service/templates/serviceaccount.yaml",
+      "infra/helm/transfer-service/templates/configmap.yaml",
+      "infra/smoke/smoke-test.sh",
+      "docs/runbooks/transfer-service.md"
+    ],
+    "migration_fixes": {
+      "description": "DevOps smoke testing discovered 5 schema mismatches between Flyway migrations and JPA entities. These are pre-existing backend bugs surfaced by real Docker runtime (not caught by unit tests because Testcontainers were Docker-gated in QA phase). Fixes applied to migrations; backend-dev should align entity annotations with migration types or vice versa in US-006 hardening.",
+      "fixes": [
+        {
+          "file": "V002__create_transfer_idempotency.sql",
+          "fix": "key_hash CHAR(64) -> VARCHAR(64) (Hibernate @Column(length=64) maps to varchar, not bpchar)"
+        },
+        {
+          "file": "V002__create_transfer_idempotency.sql",
+          "fix": "request_checksum CHAR(64) -> VARCHAR(64) (same reason)"
+        },
+        {
+          "file": "V002__create_transfer_idempotency.sql",
+          "fix": "cached_response_body JSONB -> TEXT (matches @Column(columnDefinition='TEXT') in IdempotencyJpaEntity)"
+        },
+        {
+          "file": "V002__create_transfer_idempotency.sql",
+          "fix": "cached_response_code SMALLINT -> INTEGER (Java int maps to int4/INTEGER, not int2/SMALLINT)"
+        },
+        {
+          "file": "V004__create_outbox.sql",
+          "fix": "headers JSONB -> TEXT (matches @Column(columnDefinition='TEXT') in OutboxJpaEntity)"
+        },
+        {
+          "file": "V004__create_outbox.sql",
+          "fix": "payload JSONB -> TEXT (same reason)"
+        },
+        {
+          "file": "V001__create_transfers.sql",
+          "fix": "currency CHAR(3) -> VARCHAR(3) (Hibernate maps @Column(length=3) String to varchar)"
+        }
+      ],
+      "note": "schema_version SMALLINT in V004 is CORRECT — OutboxJpaEntity.schemaVersion is Java short which maps to SMALLINT. Was incorrectly changed to INTEGER and reverted."
+    },
+    "must_fix_gating": {
+      "items_addressed_in_devops_config": [
+        "Vault integration stub for DB secrets (Security ITEM-4) — extraVolumes with Vault CSI SecretProviderClass in Helm values",
+        "Actuator on management port 9090, separate from app port 8080 (Security ITEM-9) — MANAGEMENT_SERVER_PORT env var in Helm deployment + docker-compose",
+        "K8s NetworkPolicy egress allow-list: postgres, otel-collector, account-service, DNS (Security ITEM-9)",
+        "swagger-ui disabled in staging/prod via SPRINGDOC_SWAGGER_UI_ENABLED=false env var (Security ITEM-9)",
+        "Container runs as non-root user (app:app UID 1000) with readOnlyRootFilesystem",
+        "Resource requests and limits set (cpu: 500m/1500m, memory: 1Gi/2Gi) — prevents noisy neighbor",
+        "PodDisruptionBudget minAvailable: 2 — prevents zero-replica windows during drain",
+        "HPA minReplicas: 3, maxReplicas: 12 — HPA >= PDB + 1 to prevent deadlock",
+        "SCA scan (OWASP Dependency-Check + Trivy fs) wired in CI pipeline (Security ITEM-10)",
+        "Container scan (Trivy image) wired in CI pipeline (Security ITEM-10)",
+        "SBOM generation (syft) + cosign image signing in push-registry stage (Security ITEM-10)",
+        "Topology spread constraints for Thailand-region PDPA data residency (Security ITEM-9)"
+      ],
+      "items_still_blocking_for_staging": [
+        "JWT validation enabled in SecurityConfig (Security ITEM-2) — backend-dev: uncomment oauth2ResourceServer(jwt) + Vault inject issuer-uri",
+        "Remove STUB_CUSTOMER_ID from TransferController (Security ITEM-3) — backend-dev: inject @AuthenticationPrincipal Jwt",
+        "AccountClientStub @Profile guard (Security ITEM-1) — backend-dev: add @Profile('!prod & !staging') + ConditionalOnProperty",
+        "MDC.clear() ServletFilter (Security ITEM-7) — backend-dev: wrap request in try/finally MDC.clear()",
+        "Micrometer-tracing + traceparent filter (Security ITEM-8) — backend-dev: wire W3C traceparent ServletFilter",
+        "BUG-QA-001: idempotency replay of REJECTED transfer — backend-dev: add unit + integration test",
+        "BUG-QA-002: TTL expiry path coverage — backend-dev: add integration test for findValid() predicate",
+        "Integration tests must execute in CI with Docker API >= 1.44 — DevOps: CI runner must use Docker Desktop >= 4.19",
+        "Performance Gatling baseline at first staging deploy: 100 RPS sustained, p95 < 1000ms, p99 < 3000ms"
+      ]
+    },
+    "dod_checklist": {
+      "all_items_complete": false,
+      "complete_for_v1_scaffold": true,
+      "blockers_for_staging_deploy": "see must_fix_gating.items_still_blocking_for_staging",
+      "devops_dod_subset": {
+        "ci_pipeline_green_end_to_end": "partial — pipeline YAML generated and valid; runtime execution requires CI runner with Docker",
+        "image_built_scanned_pushed": "build succeeded locally; scan and push require CI runner + registry credentials",
+        "helm_chart_deployed_to_staging": "not deployed — gated on 5 backend security items",
+        "smoke_tests_pass": "partial — liveness/readiness/prometheus pass; POST gated on JWT (expected for v1)",
+        "grafana_dashboard_live": "dashboard JSON provisioned; requires Grafana + Prometheus running",
+        "alert_rules_deployed": "alert YAML written; requires Prometheus Operator or rules_files config",
+        "rollback_command_documented": true,
+        "rollback_rehearsed": "not possible without staging cluster",
+        "runbook_updated": true
+      }
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-18T12:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "c2f84d17-3b9e-4a06-95c1-8e7d0f2a5b3c",
+    "notes": "v1 scaffold deploy artifacts complete. Docker build succeeded. Smoke test: liveness 200, readiness 200, Prometheus metrics 200. POST returns 403 (SecurityConfig — expected, not a defect). 7 migration schema mismatches between Flyway SQL and JPA entities fixed during smoke testing — these are pre-existing backend bugs now surfaced and fixed. Staging deploy gated on 5 backend items (JWT, stub guard, stub customer ID, MDC filter, tracing). Infra_status: configs_generated_runtime_partially_verified."
+  }
+}

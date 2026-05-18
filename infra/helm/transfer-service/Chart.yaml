@@ -1,0 +1,26 @@
+apiVersion: v2
+name: transfer-service
+description: |
+  Helm chart for the banking transfer-service microservice.
+  Intra-bank THB money transfer — US-001 + US-003 (v1 scaffold).
+  Deploys to banking-staging and banking-prod namespaces.
+type: application
+version: 1.0.0
+appVersion: "1.0.0-SNAPSHOT"
+
+keywords:
+  - banking
+  - transfer
+  - microservice
+  - spring-boot
+
+maintainers:
+  - name: platform-banking
+    email: platform-banking@example.com
+
+annotations:
+  # Helm chart versioning follows the service semver
+  # Chart version bumped independently only for chart-only changes
+  artifacthub.io/changes: |
+    - kind: added
+      description: "Initial v1 scaffold chart — staging ready pending US-006 security hardening"
