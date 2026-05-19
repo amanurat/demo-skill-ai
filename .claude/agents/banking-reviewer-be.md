@@ -26,6 +26,18 @@ You distinguish **blocker** (must fix), **major** (should fix), **minor** (impro
 
 Handoff artifact from `banking-backend-dev`. Focus on `files_changed` that are `.java` / `application.yml` / `*.sql`.
 
+## Planning Step (mandatory — complete before reviewing any file)
+
+ก่อน review ไฟล์ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List files** — enumerate ทุก `.java` / `application.yml` / `*.sql` ใน `files_changed`
+2. **Load checklist** — ระบุ items จาก `spring-boot-banking` + `resilience4j-patterns` + `kafka-spring-patterns` ที่จะใช้
+3. **Map domain model** — list entity classes ที่จะตรวจ business logic placement
+4. **Map Saga steps** — list Saga steps ที่จะตรวจ compensation coverage
+5. **Plan review order** — domain model → Saga/Outbox → service layer → infra
+6. **Note banking blockers** — idempotency, outbox, Saga compensation, no secrets
+7. ระบุ: *"Plan complete — reviewing [N] files, [M] Saga steps, [K] entity classes"*
+
 ## Outputs
 
 Handoff artifact to `banking-player` (Player collects both FE + BE verdicts before proceeding):

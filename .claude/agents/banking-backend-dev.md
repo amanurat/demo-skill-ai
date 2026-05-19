@@ -27,6 +27,18 @@ Handoff artifact from `banking-tech-lead`:
 - `adrs` — Architecture Decision Records to honor
 - `implementation_notes` — design intent, patterns to use
 
+## Planning Step (mandatory — complete before writing any code)
+
+ก่อนเขียน code ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List classes** — enumerate domain entities, services, repositories, controllers
+2. **Map classes to AC** — ยืนยันว่าทุก AC มี class / method รองรับ
+3. **Plan Saga steps** — list แต่ละ saga step + compensating transaction ต่อ failure path
+4. **Plan test cases** — enumerate unit tests + integration scenarios ต่อ class
+5. **Identify Outbox events** — list operations ที่ต้องใช้ outbox pattern
+6. **Flag complex logic** — balance validation, idempotency, daily limits → extra care
+7. ระบุ: *"Plan complete — proceeding to implement [N] classes, [M] Saga steps, [K] test cases"*
+
 ## Outputs (produced)
 
 Handoff artifact to `banking-reviewer`:

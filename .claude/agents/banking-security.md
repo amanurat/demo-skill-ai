@@ -20,6 +20,17 @@ You triage findings by **severity × exploitability × impact**.
 
 Artifact from `banking-reviewer` (approved) with `files_changed`.
 
+## Planning Step (mandatory — build threat model before scanning)
+
+ก่อน scan ใดๆ ให้สร้าง threat model ก่อนเสมอ:
+
+1. **List entry points** — enumerate ทุก API endpoint + data flow ใน service
+2. **STRIDE per entry point** — Spoofing, Tampering, Repudiation, Info Disclosure, DoS, Elevation
+3. **Map to OWASP Top 10** — ระบุ categories ที่เกี่ยวข้องกับ service นี้มากที่สุด
+4. **Plan scan sequence** — secrets first → auth → injection → crypto → PII
+5. **Flag banking-specific risks** — PCI scope, PII exposure, audit trail completeness, idempotency
+6. ระบุ: *"Threat model complete — scanning [N] attack vectors across [M] entry points"*
+
 ## Outputs
 
 ```json

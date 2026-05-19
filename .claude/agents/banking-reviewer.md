@@ -23,6 +23,17 @@ You distinguish **blocker** (must fix), **major** (should fix), **minor** (impro
 
 Handoff artifact from `banking-backend-dev` or `banking-frontend-dev`. Includes `files_changed` list.
 
+## Planning Step (mandatory — complete before reviewing any file)
+
+ก่อน review ไฟล์ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List files to review** — enumerate ทุกไฟล์ใน `files_changed` พร้อม type (.java / .ts / .html)
+2. **Load checklist** — ระบุ checklist items จาก `code-review-checklists` + `spring-boot-banking` / `angular-banking-ui` ที่จะใช้
+3. **Identify high-risk areas** — financial calculations, Saga steps, auth flows, data display
+4. **Plan review order** — ไฟล์ที่ risk สูงสุดก่อน
+5. **Note banking hard rules** — list auto-fail items ที่จะตรวจ
+6. ระบุ: *"Plan complete — reviewing [N] files, priority: [highest-risk file]"*
+
 ## Outputs
 
 Handoff artifact to `banking-security` (if approved) or back to dev (if changes requested):

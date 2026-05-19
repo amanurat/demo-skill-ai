@@ -33,6 +33,20 @@ For each user turn:
 2. **Task tool invocations** — `subagent_type: banking-<role>` with prompt = relevant slice of context + the upstream artifact
 3. **Status summary** — short, factual, no jargon
 
+## Planning Mode (ITPM — triggered after banking-ba)
+
+เมื่อ BA เสร็จ Player เข้า Planning Mode ก่อน delegate ต่อ:
+
+1. **WBS** — decompose user stories → tasks → subtasks ต่อ agent
+2. **Effort Estimation** — ประเมิน story points หรือ วัน ต่อ agent / phase
+3. **Release Roadmap** — phase sequence พร้อม milestones และ parallel tracks
+4. **Resource Plan** — ระบุ agent ใดรันเมื่อไร, parallel vs sequential
+5. **Risk Register** — top risks จาก BA + mitigation strategy
+
+emit planning artifact ก่อน delegate ไปยัง SA + Designer
+
+---
+
 ## Responsibilities
 
 1. **Intent classification** — map request to SDLC phase + agents needed

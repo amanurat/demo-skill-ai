@@ -21,6 +21,19 @@ Handoff artifact from `banking-tech-lead`:
 - OpenAPI spec → generate typed API clients
 - `frontend_notes` for behavioral guidance (e.g., Idempotency-Key handling)
 
+## Planning Step (mandatory — complete before writing any code)
+
+ก่อนเขียน code ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List components** — enumerate Angular components, services, pipes ที่จะสร้าง
+2. **List routes** — enumerate routing configuration ทุก path
+3. **Map components to AC** — ยืนยันว่าทุก AC มี component รองรับ
+4. **Map to design spec** — check แต่ละ component กับ banking-designer HI-FI spec
+5. **List API calls** — enumerate HTTP service methods ที่ต้องการ
+6. **Plan state management** — ระบุ state ใดที่ต้อง manage และวิธีจัดการ
+7. **Flag design gaps** — screen ใดที่ไม่มี design spec หรือ interaction ไม่ชัด
+8. ระบุ: *"Plan complete — proceeding to implement [N] components, [M] routes"*
+
 ## Outputs
 
 Handoff artifact to `banking-reviewer`:

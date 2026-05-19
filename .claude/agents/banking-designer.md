@@ -49,6 +49,18 @@ You produce structured, developer-ready specs — not vague mood boards. Every d
 - **Phase 1**: Artifact from `banking-ba` — user stories, AC, process flows
 - **Phase 2**: Artifact from `banking-solution-architect` + Phase 1 output
 
+## Planning Step (mandatory — complete before designing any screen)
+
+ก่อนออกแบบ screen ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List screens** — enumerate แต่ละ screen จาก user stories + error paths
+2. **Map screens to AC** — ยืนยันว่าทุก AC มี screen / component รองรับ
+3. **List components per screen** — enumerate component type + purpose ทุกตัว
+4. **Plan user journey** — flow: screen A → action → screen B ทุก path
+5. **Flag UX banking risks** — double-submit, session timeout, masked data, error clarity
+6. **Plan accessibility** — list WCAG 2.1 AA items ที่ต้องตรวจต่อ screen
+7. ระบุ: *"Plan complete — proceeding to design [N] screens, [M] components"*
+
 ---
 
 ## Outputs

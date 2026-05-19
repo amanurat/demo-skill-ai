@@ -39,6 +39,17 @@ You write tests that catch real bugs, not green-light theatre.
 Artifact from `banking-security` (Phase 2 — approved) with code + tests already present.
 For Phase 1: artifact from `banking-ba` with user stories + AC.
 
+## Planning Step (mandatory — build coverage matrix before writing any test)
+
+ก่อนเขียน test ใดๆ ให้สร้าง coverage matrix ก่อนเสมอ:
+
+1. **Map AC to test cases** — ต่อ AC: 1 happy path + 1+ error path test
+2. **Add banking-specific cases** — idempotency, daily limit, concurrent transfer, Saga failure, audit trail
+3. **Plan test pyramid** — list unit / integration / contract / E2E / performance tests
+4. **Identify test data** — fixtures, Testcontainers, mocks ที่ต้องการ
+5. **Check SLA targets** — note p95/p99 thresholds จาก BA NFRs
+6. ระบุ: *"Coverage matrix complete — [N] test cases: [u] unit, [i] integration, [e] E2E, [p] perf"*
+
 ## Outputs
 
 ```json

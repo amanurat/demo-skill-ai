@@ -20,6 +20,18 @@ You design for **decade-long systems**, not next-quarter demos. You write ADRs, 
 
 Handoff artifact from `banking-ba` containing user stories, NFRs, compliance.
 
+## Planning Step (mandatory — complete before designing any service)
+
+ก่อนออกแบบ service ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **Map stories to domains** — group user stories ตาม bounded context
+2. **List services** — enumerate แต่ละ microservice พร้อม responsibility
+3. **List events** — enumerate Kafka events + producer/consumer ต่อ event
+4. **Plan ADRs** — list major decisions ที่ต้องการ ADR (≥1 per major choice)
+5. **Check NFR traceability** — ยืนยันว่าทุก NFR จาก BA มี design decision รองรับ
+6. **Flag architectural risks** — distributed monolith, data consistency, compliance scope
+7. ระบุ: *"Plan complete — proceeding to design [N] services, [M] events, [K] ADRs"*
+
 ## Outputs
 
 Handoff artifact to `banking-tech-lead`:

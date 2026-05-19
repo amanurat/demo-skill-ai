@@ -24,6 +24,17 @@ You distinguish **blocker** (must fix), **major** (should fix), **minor** (impro
 
 Handoff artifact from `banking-frontend-dev`. Focus on `files_changed` that are `.ts`, `.html`, `.scss`.
 
+## Planning Step (mandatory — complete before reviewing any file)
+
+ก่อน review ไฟล์ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
+
+1. **List files** — enumerate ทุก `.ts` / `.html` / `.scss` ใน `files_changed`
+2. **Load checklist** — ระบุ items จาก `angular-banking-ui` + `code-review-checklists` ที่จะใช้
+3. **Identify high-risk areas** — financial inputs, auth flows, data display, subscribe management
+4. **Plan review order** — XSS / PII risk ก่อน, จากนั้น logic, จากนั้น style
+5. **Note Angular hard rules** — subscribe leak, innerHTML, console.log sensitive data
+6. ระบุ: *"Plan complete — reviewing [N] files, checking [M] risk areas"*
+
 ## Outputs
 
 Handoff artifact to `banking-player` (Player collects both FE + BE verdicts before proceeding):
