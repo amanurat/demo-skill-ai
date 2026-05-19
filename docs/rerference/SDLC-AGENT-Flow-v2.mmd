@@ -1,0 +1,146 @@
+flowchart TB
+    classDef player     fill:#1e3a8a,color:#fff,stroke:#1e3a8a,font-weight:bold
+    classDef discovery  fill:#3b82f6,color:#fff,stroke:#1d4ed8
+    classDef design     fill:#db2777,color:#fff,stroke:#be185d
+    classDef dev        fill:#059669,color:#fff,stroke:#047857
+    classDef review     fill:#7c3aed,color:#fff,stroke:#6d28d9
+    classDef security   fill:#dc2626,color:#fff,stroke:#b91c1c
+    classDef qa         fill:#d97706,color:#fff,stroke:#b45309
+    classDef devops     fill:#0891b2,color:#fff,stroke:#0e7490
+    classDef shiftleft  fill:#fef9c3,color:#78350f,stroke:#d97706,stroke-dasharray:5 3
+    classDef gate       fill:#f0fdf4,color:#166534,stroke:#16a34a
+    classDef artifact   fill:#f8fafc,color:#475569,stroke:#cbd5e1,font-size:12px
+    classDef skill      fill:#fefce8,color:#713f12,stroke:#ca8a04,font-size:12px
+    classDef done       fill:#16a34a,color:#fff,stroke:#15803d,font-weight:bold
+    classDef user       fill:#0f172a,color:#fff,stroke:#0f172a,font-weight:bold
+    classDef pm         fill:#7c2d12,color:#fff,stroke:#9a3412,font-weight:bold
+
+    USER(["👤 USER REQUIREMENT"]):::user
+
+    PM["📋  PROJECT MANAGER  ·  banking-pm  ·  Opus\n──────────────────────────────────────────\nPLAN: backlog · prioritization · sprint goal · risk register\n──────────────────────────────────────────\nPrioritized Backlog · Sprint Goal · WBS\nRAID Log · Stakeholder Reports · Capacity Check"]:::pm
+
+    PMA(["PM-001 — Backlog + Sprint Goal"]):::artifact
+
+    subgraph ORCH["🎯  PLAYER / ORCHESTRATOR  ·  banking-player  ·  Opus  ·  Meta/Platform Role (not a team role)"]
+    direction TB
+
+        BA["🔍  BA AGENT  ·  banking-ba  ·  Sonnet\n─────────────────────────────────\nPLAN: actors · stories · AC map · constraints\n─────────────────────────────────\nUser Stories · AC · NFRs · Process Flows\nCompliance (PCI-DSS · GDPR)"]:::discovery
+
+        A1(["A1 — BA Artifact"]):::artifact
+
+        DS1["🎨  DESIGNER P1  ·  banking-designer  ·  Opus\n──────────────────────────────────────────\nPLAN: screen list · AC map · journey paths\n──────────────────────────────────────────\nUser Journey Maps · LO-FI Wireframes\n✦ runs parallel with SA ✦"]:::design
+
+        SA["🏗️  SOLUTION ARCHITECT  ·  banking-solution-architect  ·  Opus\n──────────────────────────────────────────────────────────\nPLAN: domain map · service list · events · ADRs · NFR trace\n──────────────────────────────────────────────────────────\nService Map · Kafka Events · ADRs · NFR Traceability"]:::discovery
+
+        QAP1["🧪  QA PHASE 1  ·  banking-qa  ·  Sonnet\n────────────────────────────────────────\nPLAN: AC→test map · banking cases · pyramid\n────────────────────────────────────────\nTest Plan only — no code execution\n✦ SHIFT-LEFT after BA ✦"]:::shiftleft
+
+        A2(["A2 — SA Artifact"]):::artifact
+
+        DS2["🎨  DESIGNER P2  ·  banking-designer  ·  Opus\n───────────────────────────────────────────\nPLAN: screen list · AC map · component plan\n───────────────────────────────────────────\nHI-FI Component Specs · Design Tokens\nA11y Checklist · Handoff Notes"]:::design
+
+        A2b(["A2b — HI-FI Design Spec"]):::artifact
+
+        TL["⚙️  TECH LEAD  ·  banking-tech-lead  ·  Opus\n──────────────────────────────────────────\nPLAN: endpoints · DB tables · Flyway migrations\n──────────────────────────────────────────\nOpenAPI 3 Spec · DB Schema\nFlyway Migrations · ADRs · Impl Notes"]:::discovery
+
+        A3(["A3 — TL Artifact"]):::artifact
+
+        FE["🖥️  FRONTEND DEV  ·  banking-frontend-dev  ·  Sonnet\n──────────────────────────────────────────────────\nPLAN: component list · routes · AC map · design spec\n──────────────────────────────────────────────────\nAngular Components · Routes\nState Management · API Integration\n✦ parallel with BE Dev ✦"]:::dev
+
+        BE["☕  BACKEND DEV  ·  banking-backend-dev  ·  Sonnet\n──────────────────────────────────────────────────\nPLAN: class list · AC map · Saga steps · test cases\n──────────────────────────────────────────────────\nSpring Boot Service · Saga · Outbox\nRepository · Unit Tests\n✦ parallel with FE Dev ✦"]:::dev
+
+        DOP1["🚀  DEVOPS P1  ·  banking-devops  ·  Sonnet\n──────────────────────────────────────────\nPLAN: pipeline stages · K8s resources · rollback\n──────────────────────────────────────────\nDockerfile · CI/CD Skeleton\nHelm Chart Scaffold\n✦ SHIFT-LEFT after TL ✦"]:::shiftleft
+
+        A4a(["A4a — FE Artifact"]):::artifact
+        A4b(["A4b — BE Artifact"]):::artifact
+
+        RVFE["🔎  REVIEWER-FE  ·  banking-reviewer-fe  ·  Opus\n──────────────────────────────────────────────\nPLAN: file list · Angular checklist · risk order\n──────────────────────────────────────────────\nAngular · XSS · Subscribe Leaks\nWCAG A11y · UX · PII in console\n✦ parallel with Reviewer-BE ✦"]:::review
+
+        RVBE["🔎  REVIEWER-BE  ·  banking-reviewer-be  ·  Opus\n──────────────────────────────────────────────\nPLAN: file list · Spring checklist · domain→Saga\n──────────────────────────────────────────────\nJava · Saga Compensation · Outbox\nIdempotency · JPA · Anemic Domain\n✦ parallel with Reviewer-FE ✦"]:::review
+
+        G1{{"🚦 Gate: BOTH reviewers approved?\nfail → loop back failing side only · max 3×"}}:::gate
+
+        SEC["🔒  SECURITY AGENT  ·  banking-security  ·  Opus\n─────────────────────────────────────────────\nPLAN: STRIDE threat model · OWASP map · scan order\n─────────────────────────────────────────────\nOWASP Top 10 · SAST/SCA · STRIDE\nPCI-DSS · GDPR · PDPA · Secrets Scan"]:::security
+
+        A5(["A5 — Security Artifact"]):::artifact
+
+        G2{{"🚦 Gate: No critical/high CVE · Secrets clean?\nfail → loop back to Dev · max 3×"}}:::gate
+
+        QA["🧪  QA PHASE 2  ·  banking-qa  ·  Sonnet\n────────────────────────────────────────\nPLAN: AC→test matrix · banking cases · pyramid\n────────────────────────────────────────\nUnit · Integration · Contract · E2E\nPerformance (Gatling/k6) · Mutation (PIT)\n+ uses test plan from QA Phase 1"]:::qa
+
+        A6(["A6 — QA Artifact"]):::artifact
+
+        G3{{"🚦 Gate: All suites green · SLA met · Coverage ≥ 80%?\nfail → loop back to Dev · max 3×"}}:::gate
+
+        DO["🚀  DEVOPS PHASE 2  ·  banking-devops  ·  Sonnet\n────────────────────────────────────────────────\nPLAN: pipeline stages · K8s resources · observability\n────────────────────────────────────────────────\nDocker Build + Scan · Helm Deploy · K8s Manifests\nGrafana Dashboard · Smoke Tests · Rollback Verified\n+ uses CI/CD skeleton from DevOps Phase 1"]:::devops
+
+        DONE(["✅ DoD MET\nDeployed · Dashboards Live · Rollback Tested"]):::done
+
+    end
+
+    subgraph SKILLS["📚  SKILL LIBRARY"]
+    direction TB
+        SK1["📄 openapi-flyway-standards\n▸ Tech Lead"]:::skill
+        SK2["☕ spring-boot-banking\n▸ Backend Dev"]:::skill
+        SK3["⚡ resilience4j-patterns\n▸ Backend Dev"]:::skill
+        SK4["📨 kafka-spring-patterns\n▸ Backend Dev"]:::skill
+        SK5["🧵 concurrency-virtual-threads\n▸ Backend Dev"]:::skill
+        SK6["🅰️ angular-banking-ui\n▸ Frontend Dev · Designer"]:::skill
+        SK7["📋 code-review-checklists\n▸ Reviewer-FE · Reviewer-BE"]:::skill
+        SK8["🛡️ banking-security-patterns\n▸ Security · Reviewers"]:::skill
+        SK9["🔍 dependency-auditor\n▸ Security"]:::skill
+        SK10["🧪 banking-test-automation\n▸ QA"]:::skill
+        SK11["🚀 banking-devops-platform\n▸ DevOps"]:::skill
+        SK12["⚡ spring-startup-optimizer\n▸ DevOps"]:::skill
+    end
+
+    USER --> PM --> PMA --> BA --> A1
+    A1 --> SA
+    A1 --> DS1
+    A1 -.->|shift-left| QAP1
+    SA --> A2
+    A2 --> DS2
+    DS1 --> DS2
+    DS2 --> A2b
+    A2 --> TL
+    A2b -->|design handoff| TL
+    TL --> A3
+    A3 --> FE
+    A3 --> BE
+    A3 -.->|shift-left| DOP1
+    FE --> A4a --> RVFE
+    BE --> A4b --> RVBE
+    RVFE --> G1
+    RVBE --> G1
+    G1 -->|both approved| SEC --> A5 --> G2
+    G2 -->|approved| QA
+    QAP1 -.->|test plan ready| QA
+    QA --> A6 --> G3
+    G3 -->|all green| DO
+    DOP1 -.->|skeleton ready| DO
+    DO --> DONE
+
+    G1 -->|"FE changes_requested · iter+1"| FE
+    G1 -->|"BE changes_requested · iter+1"| BE
+    G2 -->|"security finding · iter+1"| BE
+    G3 -->|"bug/SLA miss · iter+1"| BE
+
+    DONE -.->|status report| PM
+    G3 -.->|retry exhausted · escalate| PM
+
+    TL -.-> SK1
+    BE -.-> SK2
+    BE -.-> SK3
+    BE -.-> SK4
+    BE -.-> SK5
+    FE -.-> SK6
+    DS1 -.-> SK6
+    DS2 -.-> SK6
+    RVFE -.-> SK7
+    RVBE -.-> SK7
+    RVBE -.-> SK2
+    SEC -.-> SK8
+    SEC -.-> SK9
+    RVFE -.-> SK8
+    QA -.-> SK10
+    DO -.-> SK11
+    DO -.-> SK12

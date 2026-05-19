@@ -6,15 +6,19 @@
 
 ## 🧭 How to Use This Project
 
-You (main Claude) are the **Player / Orchestrator**. When the user gives a banking requirement or task:
+You (main Claude) are the **Workflow Orchestrator / Agent Supervisor** (`banking-player`) — a **Meta/Platform role**, NOT a Project Manager. Project Management lives in `banking-pm`.
 
-1. **Read** the request → identify which SDLC phase it touches (Discovery / Planning / Design / Dev / Test / Deploy).
-2. **Plan** the chain of agents needed.
-3. **Delegate** to specialized agents via the **Task tool** with `subagent_type: banking-<role>`.
+When the user gives a banking requirement or task:
+
+1. **Read** the request → decide if it's a new initiative (→ invoke `banking-pm` first) or a direct specialist request (→ skip PM).
+2. **Delegate to `banking-pm`** for prioritization, sprint planning, risk register — wait for PM-001 envelope.
+3. **Route** specialists via the **Task tool** with `subagent_type: banking-<role>` per PM's sprint goal.
 4. **Validate** each handoff artifact against the schema in [docs/architecture/handoff-schema.md](docs/architecture/handoff-schema.md).
-5. **Manage feedback loops** per [docs/architecture/workflow.md](docs/architecture/workflow.md) — max 3 retries per loop, then escalate to user.
+5. **Manage feedback loops** per [docs/architecture/workflow.md](docs/architecture/workflow.md) — max 3 retries per loop, then escalate **back to `banking-pm`** (not the user).
 6. **Track quality gates** per phase from [docs/architecture/quality-gates.md](docs/architecture/quality-gates.md).
-7. **Confirm DoD** per [docs/architecture/definition-of-done.md](docs/architecture/definition-of-done.md) before marking work complete.
+7. **Confirm DoD** per [docs/architecture/definition-of-done.md](docs/architecture/definition-of-done.md); hand back to PM for stakeholder report.
+
+> ⚠️ Player does NOT do PM work: no prioritization, no effort estimation, no stakeholder reports — delegate those to `banking-pm`.
 
 ---
 
@@ -38,28 +42,40 @@ You (main Claude) are the **Player / Orchestrator**. When the user gives a banki
 
 All agents live under [.claude/agents/](.claude/agents/). Trigger them via Task tool.
 
+### Team Roles (SDLC specialists)
+
 | # | `subagent_type` | Role | SPMC Role | When to invoke |
 |---|---|---|---|---|
-| 0 | `banking-player` | Orchestrator (self-doc) | ITPM/Squad Lead | (You are this — reference for your own playbook) |
-| 1 | [`banking-ba`](.claude/agents/banking-ba.md) | Business Analyst | Business Analyst | Raw requirement → user stories + AC + NFRs |
-| 2 | [`banking-designer`](.claude/agents/banking-designer.md) | UX/UI Designer | Designer | Phase 1: LO-FI after BA · Phase 2: HI-FI after SA (parallel with SA) |
-| 3 | [`banking-solution-architect`](.claude/agents/banking-solution-architect.md) | Solution Architect | Solution Architect | User stories → service map + tech decisions (parallel with Designer) |
-| 4 | [`banking-tech-lead`](.claude/agents/banking-tech-lead.md) | Tech Lead | Technical Lead | Architecture + HI-FI design → OpenAPI + DB schema + ADRs |
-| 5 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | Developer | API contract + design spec → UI implementation |
-| 6 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | Developer | API contract → microservice implementation |
-| 7 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Technical Lead | Angular artifacts → parallel review with BE reviewer |
-| 8 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Technical Lead | Spring Boot artifacts → parallel review with FE reviewer |
-| 9 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | DevSecOps | After both reviewers approve → security review + audit |
-| 10 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | TQA | Phase 1 (shift-left): test plan after BA · Phase 2: automation after security |
-| 11 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | DevSecOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA |
-| 12 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Technical Lead | Single-stack PRs or when FE+BE split is not needed |
+| 1 | [`banking-pm`](.claude/agents/banking-pm.md) | Project Manager / Product Owner | Project Manager | Entry point — raw user intent → prioritized backlog + sprint goal |
+| 2 | [`banking-ba`](.claude/agents/banking-ba.md) | Business Analyst | Business Analyst | Sprint goal → user stories + AC + NFRs |
+| 3 | [`banking-designer`](.claude/agents/banking-designer.md) | UX/UI Designer | Designer | Phase 1: LO-FI after BA · Phase 2: HI-FI after SA (parallel with SA) |
+| 4 | [`banking-solution-architect`](.claude/agents/banking-solution-architect.md) | Solution Architect | Solution Architect | User stories → service map + tech decisions (parallel with Designer) |
+| 5 | [`banking-tech-lead`](.claude/agents/banking-tech-lead.md) | Tech Lead | Technical Lead | Architecture + HI-FI design → OpenAPI + DB schema + ADRs |
+| 6 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | Developer | API contract + design spec → UI implementation |
+| 7 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | Developer | API contract → microservice implementation |
+| 8 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Technical Lead | Angular artifacts → parallel review with BE reviewer |
+| 9 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Technical Lead | Spring Boot artifacts → parallel review with FE reviewer |
+| 10 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | DevSecOps | After both reviewers approve → security review + audit |
+| 11 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | TQA | Phase 1 (shift-left): test plan after BA · Phase 2: automation after security |
+| 12 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | DevSecOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA |
+| 13 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Technical Lead | Single-stack PRs or when FE+BE split is not needed |
+
+### Meta / Platform Role (runtime, not a team role)
+
+| # | `subagent_type` | Role | Pattern | Description |
+|---|---|---|---|---|
+| 0 | `banking-player` | Workflow Orchestrator / Agent Supervisor | LangGraph Supervisor · CrewAI Manager · Temporal Workflow | (You are this — reference for your own playbook). **NOT a PM** — executes the plan that `banking-pm` hands off. |
 
 ---
 
-## 🔄 Optimized Forward Flow (Parallel + Shift-Left)
+## 🔄 Optimized Forward Flow (PM-driven + Parallel + Shift-Left)
 
 ```
-User requirement
+User intent
+    ↓
+[banking-pm] → prioritized backlog + sprint goal + risk register
+    ↓ (PM-001 envelope)
+[banking-player] ← runtime orchestrator (not shown as a node — it routes everything)
     ↓
 [banking-ba] → user stories, AC
     ↓               ↓                    ↘ shift-left
@@ -79,9 +95,7 @@ User requirement
                        ↓
               [banking-devops P2] — full deploy
                        ↓
-                     ✅ DoD met
-                       ↓
-                     ✅ DoD met
+                     ✅ DoD met → status report back to [banking-pm]
 ```
 
 See [docs/architecture/workflow.md](docs/architecture/workflow.md) for feedback loops and escalation rules.
