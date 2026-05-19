@@ -74,6 +74,18 @@ Read `references/*.md` from the skill folder on demand based on the specific sub
 
 ---
 
+## Gotchas
+
+- **`BigDecimal` เท่านั้นสำหรับเงิน** — ห้ามใช้ `double` / `float` เด็ดขาด; rounding error สะสมทำให้ยอดบัญชีคลาดเคลื่อน
+- **`@Async` ไม่ propagate `@Transactional`** — อย่าใช้ `@Async` กับ financial operation; Outbox dispatcher ต้องอยู่ใน transaction เดียวกับ state change
+- **`@Transactional` default isolation = READ_COMMITTED** — สำหรับ debit/credit ที่ต้องการ atomicity เต็ม ให้ประเมิน SERIALIZABLE หรือ optimistic lock ก่อน
+- **Flyway บน table ใหญ่** — `ALTER TABLE` โดยตรงจะล็อก table; ให้ใช้ shadow-column + background migration หรือ `pt-online-schema-change` แทน
+- **Virtual threads pin บน `synchronized`** — JDBC driver หลายตัวใช้ `synchronized` ทำให้ pin; เพิ่ม `connectionTimeout` HikariCP และ monitor `jdk.virtualThreadPinned` JFR event
+- **Outbox event ต้องอยู่ใน transaction เดียวกับ domain state** — commit แยกกัน = risk ส่ง event ซ้ำหรือไม่ส่งเลย
+- **`version` column สำหรับ optimistic lock ต้องอยู่ทุก mutable entity** — ขาด = silent overwrite บน concurrent update
+
+---
+
 ## Core Responsibilities
 
 1. Implement microservices that fulfill the OpenAPI contract exactly
@@ -84,6 +96,19 @@ Read `references/*.md` from the skill folder on demand based on the specific sub
 6. Ensure idempotency for all financial operations
 7. Emit domain events reliably (Outbox pattern)
 8. Run self-checks before handing off (build, lint, coverage)
+
+---
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact ทุกครั้ง ถ้า step ใด fail ให้ fix แล้วรัน loop ใหม่จาก step นั้น
+
+1. **Build**: `./mvnw clean verify -q` — ต้อง green ทั้งหมด
+2. **Lint**: `./mvnw checkstyle:check spotless:check` — zero violations
+3. **Coverage**: ยืนยัน unit coverage ≥ 80%; critical financial paths ≥ 95% (ดู JaCoCo report)
+4. **SAST**: `./mvnw dependency-check:check` — ไม่มี new High / Critical finding
+5. **Contract**: ยืนยัน `/api/openapi.yaml` ตรงกับ implemented routes — ไม่มี undocumented endpoint
+6. เมื่อ pass ทุก step → set `"build_status": "success"` และ `"self_checks_passed": true` ใน handoff artifact
 
 ---
 

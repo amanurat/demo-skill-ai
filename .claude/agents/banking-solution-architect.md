@@ -92,6 +92,26 @@ Handoff artifact to `banking-tech-lead`:
 - **Read-your-writes** consistency for balance queries
 - **Cut-off times** modeled explicitly for end-of-day batches
 
+## Gotchas
+
+- **Shared DB คือ distributed monolith** — แม้แต่ read-only cross-service DB access ก็ละเมิด bounded context; service อื่นต้อง consume ผ่าน API หรือ event เท่านั้น
+- **Choreography ฟังดูง่ายแต่ซ่อน complexity** — compensation order ใน financial Saga ไม่ชัดเจนถ้าใช้ choreography; default เป็น orchestration สำหรับ money movement
+- **Kafka "exactly-once" ไม่ใช่ exactly-once end-to-end** — ต้องมี idempotent consumer ฝั่งรับด้วย ถึงจะปลอดภัย
+- **BoT กำหนด audit log retention ≥ 5 ปี** — ต้องออกแบบ event retention / archival ตั้งแต่ architecture; เพิ่มทีหลังยาก
+- **Cut-off time ทำให้ event ordering ซับซ้อน** — end-of-day batch event อาจมาพร้อม real-time event; consumer ต้องรองรับ out-of-order
+- **PromptPay และ BAHTNET ใช้ network คนละชุด** — อย่า abstract เป็น "payment gateway" เดียว; bounded context แยกกัน
+
+## Validation Loop
+
+ทำก่อน emit handoff artifact:
+
+1. **Story coverage**: user story ทุกข้อจาก BA artifact → traced ไป ≥ 1 service
+2. **NFR traceability**: NFR ทุกข้อ (`performance`, `availability`, `security`) → มี entry ใน `nfr_traceability`
+3. **Data ownership**: ไม่มี service ใด `owns_data` ที่ service อื่น own อยู่แล้ว (no shared table)
+4. **ADR count**: non-trivial decision ทุกข้อ → มี ADR id ใน `decisions[]`
+5. **Event completeness**: event ทุกตัวมี `producer`, `consumers[]`, และ `delivery` guarantee
+6. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Situation | Action |

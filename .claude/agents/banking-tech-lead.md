@@ -76,6 +76,26 @@ Subagent context does not auto-load skills. Read these before authoring OpenAPI 
 3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 4. **Docs**: [ADR template](../../docs/adr/README.md) — when writing ADRs as part of your handoff
 
+## Gotchas
+
+- **`operationId` ต้อง unique ข้าม spec ทั้งหมด** — duplicate = codegen crash; ตรวจก่อน lint ด้วย Spectral
+- **Money column ต้องเป็น `NUMERIC(19,4)`** — ห้ามใช้ `FLOAT`, `REAL`, `DECIMAL` ที่ไม่ระบุ scale; ผิด = rounding error สะสมในบัญชี
+- **Flyway version ต้องเป็น sequential integer ไม่มี gap** — เช่น `V001`, `V002` ไม่ใช่ `V1`, `V10`, `V001_1`; gap = migration fail บน fresh DB
+- **`version BIGINT NOT NULL DEFAULT 0` ต้องอยู่ทุก mutable entity** — ขาด = ไม่มี optimistic lock; concurrent update = silent overwrite
+- **Idempotency-Key TTL ใน DB ต้องนานกว่า client retry window** — ค่า default 24h; สั้นกว่านั้น = duplicate transaction risk
+- **Problem-Detail `type` URI ต้องมี documentation** — URI ที่ resolve ไม่ได้หรือ 404 = compliance audit fail
+- **Avro schema `namespace` ต้องตรงกับ Java package** — mismatch = Confluent Schema Registry reject record ตอน deserialize
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact ทุกครั้ง ถ้า step ใด fail ให้ fix แล้วรัน loop ใหม่จาก step นั้น
+
+1. **OpenAPI lint**: `npx @stoplight/spectral lint <spec.yaml> --ruleset .spectral.yaml` — zero errors (warnings acceptable)
+2. **Schema validation**: ยืนยันทุก `$ref` ใน spec resolve ได้ — ไม่มี dangling reference
+3. **Migration check**: Flyway versions sequential, ไม่มี gap, ทุก migration มี `down_sql` หรือ documented reason ที่ reversible ไม่ได้
+4. **Money columns**: grep `FLOAT\|REAL\|DECIMAL[^(]` ใน migration files — ต้องไม่พบ
+5. เมื่อ pass ทุก step → emit handoff artifact
+
 ## Decision Rules
 
 | Situation | Action |

@@ -72,6 +72,16 @@ Handoff artifact to `banking-solution-architect`:
 - **Edge cases**: insufficient balance, frozen account, expired card, duplicate request, partial failure
 - **Stakeholder map**: customer, ops, compliance, fraud — each may have AC
 
+## Gotchas
+
+- **BoT daily transfer limit** — ยอดโอนรวมต่อวันสำหรับ retail customer ≤ 2 ล้านบาทตาม BoT reg — must surface ใน AC; อย่า assume ว่า limit อยู่ที่ application layer เท่านั้น
+- **PromptPay ≠ SWIFT/BAHTNET** — สองช่องทางนี้ต่าง flow, cut-off time, error codes กันคนละระบบ — อย่า merge เป็น user story เดียว
+- **Cut-off time ≠ midnight** — same-day transfer มักมี cut-off 14:00–16:00 ICT; transfer หลัง cut-off = next business day — ต้องระบุใน AC อย่างชัดเจน
+- **"ยืนยันตัวตน" ใน Thai banking** — โดยทั่วไปหมายถึง biometric + OTP ทั้งคู่ ไม่ใช่ OTP อย่างเดียว — clarify กับ stakeholder ก่อน write AC
+- **FX rate ต้อง lock ณ เวลา quote** — ไม่ใช่เวลา submit — missing ใน requirement = rounding / dispute risk ที่ซ่อนอยู่
+- **PromptPay หมายเลขย้ายได้** — phone number อาจ port ระหว่าง bank; อย่า treat เป็น permanent bank identifier ใน data model
+- **PENDING_SETTLEMENT ≠ COMPLETED** — transfer อาจอยู่ใน state กลางก่อน settle จริง — AC ต้องแยก state นี้ออกมา ไม่เช่นนั้น UI จะ confuse ลูกค้า
+
 ## Example: Money Transfer Story (partial)
 
 ```

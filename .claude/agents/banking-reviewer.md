@@ -59,6 +59,24 @@ Subagent context does not auto-load skills. Read these before reviewing any PR:
 4. **Skill**: [`banking-security-patterns`](../skills/banking-security-patterns/SKILL.md) — hard rules (auto-fail items)
 5. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your verdict output
 
+## Gotchas
+
+- **`equals()` / `hashCode()` ไม่ override ใน JPA entity** → JPA 1st-level cache poisoning; ตรวจทุก `@Entity` class
+- **`@Transactional` บน `private` method ถูก Spring ignore** — proxy ไม่เห็น private method; common pattern ที่ผ่าน compile แต่ bug ที่ runtime
+- **`Optional.get()` ไม่มี `isPresent()` / `orElseThrow()`** = NPE ที่ production — flag เป็น blocker
+- **`@Scheduled` + `@Async` บน method เดียวกัน** — Spring ไม่ support; `@Async` ถูก ignore; result คือ blocking execution ที่ developer ไม่รู้
+- **JPA entity ขาด `@Column(nullable = false)`** เมื่อ DB column เป็น `NOT NULL` — ORM ไม่ enforce constraint; null ผ่าน JPA แต่ fail ที่ DB
+- **Angular `subscribe()` ใน `ngOnInit` ไม่มี unsubscribe** = memory leak; ตรวจว่ามี `takeUntilDestroyed()` หรือ `ngOnDestroy` cleanup
+- **Test ที่ mock ทุกอย่างรวมถึง class under test** = mock theatre; ไม่ได้ test อะไรจริง — flag เป็น major
+
+## Validation Loop (self-check before verdict)
+
+1. ตรวจทุกไฟล์ใน `files_changed` — ไม่ skip แม้ไฟล์ที่ดูไม่เกี่ยว
+2. ตรวจ banking hard rules (จาก `banking-security-patterns`) ครบก่อน emit verdict
+3. ยืนยันทุก comment มี: `file` + `line` + `severity` + `rule` + `message`
+4. ยืนยัน `verdict` สอดคล้องกับ severity สูงสุดที่พบ (มี blocker → ต้อง `changes_requested`)
+5. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Situation | Action |

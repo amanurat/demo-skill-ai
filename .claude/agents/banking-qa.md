@@ -60,6 +60,27 @@ Subagent context does not auto-load skills. Read these before writing tests or a
 2. **Skill**: [`spring-boot-banking`](../skills/spring-boot-banking/SKILL.md) — backend Testing Policy table (coordinate thresholds)
 3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md)
 
+## Gotchas
+
+- **Idempotency test ต้องส่ง same key สองครั้ง** — นักทดสอบส่วนใหญ่ลืม test ซ้ำด้วย key เดิม; ถ้า response ต่างกัน = bug ที่ production จะเกิดแน่นอน
+- **Testcontainers pull ช้าใน CI** — pre-pull image หรือใช้ `@ClassRule` / `@Container static` เพื่อ reuse container ทั้ง test class; อย่า start/stop ทุก test method
+- **Kafka consumer test อย่าใช้ `Thread.sleep`** — ใช้ `KafkaTestUtils.getSingleRecord(consumer, topic, timeout)` พร้อม explicit timeout; sleep = flaky test ที่หายตามใจ CI
+- **Contract test ต้องรันก่อน integration test** — failing contract = API drift; ถ้า merge ก่อน detect = production incident
+- **Daily limit test ต้องรีเซ็ต state ระหว่าง test case** — shared counter state ทำให้ test บางตัว pass หรือ fail แบบสุ่ม
+- **Performance test บน localhost ≠ staging** — latency ต่ำเกินจริง; run Gatling / k6 บน staging environment เสมอ
+- **Mutation testing (PIT) ต้องการ Spring context** — pure unit mutation อาจผ่านทั้งที่ DI wiring พัง; configure PIT ให้รวม integration scope สำหรับ money paths
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact:
+
+1. **All suites**: `./mvnw verify` — unit + integration + contract ทั้งหมด green
+2. **Coverage**: unit ≥ 80%; critical financial paths ≥ 95% (ดู JaCoCo report)
+3. **Mutation**: `./mvnw pitest:mutationCoverage` บน money packages — killed ≥ 70%
+4. **Performance**: p95 < threshold จาก BA `non_functional.performance`; ถ้า miss → loop back ก่อน sign off
+5. **Test plan**: ไฟล์ `docs/test-plans/<feature>.md` exists และ updated
+6. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Situation | Action |

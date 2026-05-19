@@ -62,6 +62,28 @@ Subagent context does not auto-load skills. Read these before building pipelines
 2. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — `infra/` layout, image naming, helm release naming
 3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
+## Gotchas
+
+- **`latest` tag ห้ามใช้ใน banking** — `helm rollback` ไม่รู้จะ pull image ไหน; ใช้ digest `sha256:...` หรือ semver tag เสมอ
+- **Non-root user ใน Dockerfile ต้อง chown `WORKDIR` ด้วย** — `USER 1000` ไม่พอถ้า `WORKDIR` owned by root; app จะ fail เขียน temp file ตอน runtime
+- **JVM service: `resources.requests` = `resources.limits`** — K8s scheduler ใช้ requests; mismatch ทำให้ pod ถูก OOMKilled แบบไม่คาดคิด
+- **Flyway run ตอน startup** — ถ้า pod restart กลางทำ migration, pod ถัดไปจะ conflict; ต้องเปิด `validateOnMigrate=true` และ Flyway locking
+- **Liveness ≠ Readiness** — liveness kill pod (ใช้ตรวจ stuck JVM); readiness เอา pod ออก load balancer (ใช้ตรวจ DB/Kafka health); ผสมกัน = outage
+- **Secret rotation ต้องรีสตาร์ท pod** — K8s `envFrom` ไม่ hot-reload; ถ้าไม่ rotate + restart = old secret ยังใช้อยู่หลัง rotation
+- **Helm `--atomic`** — ใช้ได้กับ install; บน upgrade ให้ใช้ `--timeout` + manual rollback strategy แทน; `--atomic` บน upgrade อาจทำ rollback loop
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact:
+
+1. **Image build**: `docker build --no-cache -t <image> .` — zero errors
+2. **Container scan**: `trivy image <image> --exit-code 1 --severity CRITICAL,HIGH` — zero findings
+3. **Helm lint**: `helm lint charts/<service>` — zero errors
+4. **Dry-run**: `helm template ... | kubectl apply --dry-run=client -f -` — no validation errors
+5. **Deploy + smoke**: deploy staging → smoke tests pass → `helm status <release>` = deployed
+6. **Rollback**: ยืนยัน `helm rollback <release>` ทำงานได้ (dry-run หรือ actual บน staging)
+7. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Situation | Action |

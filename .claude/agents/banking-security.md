@@ -59,6 +59,27 @@ Subagent context does not auto-load skills. Read these before assessing any code
 2. **Agent**: [`banking-reviewer`](banking-reviewer.md) — coordinate severity definitions
 3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
+## Gotchas
+
+- **JWT `alg: none` attack** — verify library whitelist `alg` explicitly; อย่า assume "if alg present = valid"; ใช้ `RS256` ไม่ใช่ `HS256` shared secret
+- **Spring Security CSRF disabled by default สำหรับ REST** — ตรวจว่า disabled โดยตั้งใจและ documented; ถ้า disabled โดยบังเอิญ = CSRF vulnerability
+- **`@PreAuthorize` บน service layer ไม่ protect internal call** — AOP proxy ทำงานเฉพาะ cross-bean call; ถ้า method เรียก method ใน class เดียวกัน = bypass; ต้องอยู่บน controller
+- **PII ใน log = PDPA / GDPR violation** — account number, amount, IP ใน INFO/WARN level เป็น violation แม้ใน exception message; ต้อง mask ก่อน log
+- **Flyway script ใน git history อาจมี credential** — `git log --all -p | grep -iE '(password|secret|key)\s*='` ก่อน approve เสมอ
+- **Thai PDPA ต้องมี consent withdrawal** — ไม่ใช่ optional feature; ถ้า personal data เกี่ยวข้องต้องมี mechanism ลบ/withdraw และ documented ใน GDPR section
+- **`X-Forwarded-For` ถูก spoof ได้** — IP-based rate limiting ต้องทำที่ ingress/WAF ไม่ใช่ application layer; application layer อย่า trust header นี้โดยตรง
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact:
+
+1. **STRIDE**: ทำ STRIDE table ครบทุก endpoint ใหม่ (Spoofing / Tampering / Repudiation / Info Disclosure / DoS / Elevation)
+2. **OWASP Top 10**: checklist รันครบ 10 ข้อ
+3. **Secrets scan**: `git log --all -p | grep -iE '(password|secret|token|key)\s*='` — zero leaked credentials ใน history
+4. **PDPA/GDPR**: PII field ทุกตัวใน data model มี `retention` policy + `lawful_basis` ใน findings
+5. **Compliance scope**: `pci_dss.scope_affected` และ `gdpr.pii_handled` filled อย่างถูกต้อง
+6. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Severity Found | Action |

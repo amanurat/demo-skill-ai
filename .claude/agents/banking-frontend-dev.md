@@ -56,6 +56,27 @@ Subagent context does not auto-load skills. Read these before starting any imple
 2. **Docs**: [project-structure.md](../../docs/architecture/project-structure.md) — frontend workspace layout, naming
 3. **Docs**: [handoff-schema.md](../../docs/architecture/handoff-schema.md) — exact envelope for your output
 
+## Gotchas
+
+- **`bypassSecurityTrustHtml` / `bypassSecurityTrustUrl` = XSS** — ห้ามใช้ใน banking UI เด็ดขาด; flag เป็น blocker ทันที
+- **Idempotency-Key ต้อง generate ตอน component init ไม่ใช่ตอน submit** — generate UUID v4 ใน `ngOnInit`; ถ้า generate ตอน submit = duplicate key บน retry
+- **`[disabled]` attribute บน form control ถูก Angular ignore** — ต้องใช้ `formControl.disable()` เท่านั้น; attribute ทำให้ value หายออกจาก form group
+- **`async` pipe ไม่ handle error** — ถ้า observable throw error หน้าจอจะ blank; ต้องใส่ `catchError` ก่อน pipe เสมอ
+- **Double-submit protection** — disable submit button ทันทีหลัง click ครั้งแรก; re-enable เฉพาะเมื่อ error response กลับมา
+- **Thai Baht formatting** — ใช้ `Intl.NumberFormat('th-TH', {style:'currency', currency:'THB'})` ไม่ใช่ manual string concat; ผิด = audit ตรวจเจอ display error
+- **HttpClient interceptor must handle 401/403 globally** — อย่า handle ใน component; token refresh / logout logic ต้องอยู่ใน interceptor เดียว
+
+## Validation Loop
+
+รัน loop นี้ก่อน emit handoff artifact:
+
+1. **Build**: `ng build --configuration production` — zero errors / warnings
+2. **Lint**: `ng lint` — zero violations
+3. **Unit**: `ng test --code-coverage --watch=false` — coverage ≥ 80%
+4. **a11y**: `npx axe-cli <local-url>` หรือ `ng run <project>:a11y` — zero violations
+5. **Lighthouse**: perf ≥ 90, a11y = 100 (ถ้า run ได้ใน environment)
+6. เมื่อ pass ทุก step → emit handoff
+
 ## Decision Rules
 
 | Situation | Action |
