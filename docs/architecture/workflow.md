@@ -1,21 +1,42 @@
 # Workflow & Feedback Loops
 
-## Forward Flow
+## Forward Flow (Optimized — Parallel + Shift-Left)
 
 ```mermaid
-flowchart LR
-    Req[User Requirement] --> BA[banking-ba]
+flowchart TD
+    Req([User Requirement]) --> BA[banking-ba]
+
     BA --> SA[banking-solution-architect]
+    BA -.->|shift-left Phase 1| QA_P1[banking-qa\nwrite test plan]
+
     SA --> TL[banking-tech-lead]
+
     TL --> FE[banking-frontend-dev]
     TL --> BE[banking-backend-dev]
-    FE --> RV[banking-reviewer]
-    BE --> RV
-    RV --> SEC[banking-security]
-    SEC --> QA[banking-qa]
-    QA --> DO[banking-devops]
+    TL -.->|shift-left Phase 1| DO_P1[banking-devops\nCI/CD skeleton]
+
+    FE --> RV_FE[banking-reviewer-fe]
+    BE --> RV_BE[banking-reviewer-be]
+
+    RV_FE -->|both approved| SEC[banking-security]
+    RV_BE -->|both approved| SEC
+
+    SEC --> QA[banking-qa\nPhase 2 full automation]
+    QA_P1 -.->|test plan ready| QA
+
+    QA --> DO[banking-devops\nPhase 2 full deploy]
+    DO_P1 -.->|skeleton ready| DO
+
     DO --> Done([✅ DoD met])
+
+    style QA_P1 fill:#fef9c3,stroke:#ca8a04
+    style DO_P1 fill:#fef9c3,stroke:#ca8a04
+    style Done fill:#22c55e,color:#fff
+    style Req fill:#3b82f6,color:#fff
 ```
+
+> **เส้นประ (-.->)** = shift-left parallel track ที่รันพร้อมกับ main flow
+> **เส้นทึบ (-->)** = sequential dependency ที่ต้องรอผล
 
 ## Feedback Loops
 

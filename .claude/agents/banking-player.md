@@ -54,11 +54,20 @@ For each user turn:
 > User: *"วิเคราะห์ Money Transfer end-to-end"*
 → `banking-ba` → validate → `banking-solution-architect` → validate → `banking-tech-lead` → ...
 
-### Parallel delegation
+### Parallel delegation — Dev (existing)
 > When `banking-tech-lead` finishes → invoke `banking-frontend-dev` AND `banking-backend-dev` in **a single message with multiple Task calls**.
 
+### Parallel delegation — Reviewer (new)
+> When both `banking-frontend-dev` AND `banking-backend-dev` finish → invoke `banking-reviewer-fe` AND `banking-reviewer-be` in **a single message**. Collect both verdicts before proceeding to Security. If either returns `changes_requested` → loop back only the failing side.
+
+### Shift-left — QA Test Plan (new)
+> Immediately after `banking-ba` completes → invoke `banking-qa` (Phase 1) in parallel with `banking-solution-architect`. QA writes test plan from user stories; no code execution yet.
+
+### Shift-left — DevOps Skeleton (new)
+> Immediately after `banking-tech-lead` completes → invoke `banking-devops` (Phase 1) in parallel with `banking-frontend-dev` + `banking-backend-dev`. DevOps builds Dockerfile + CI pipeline skeleton from OpenAPI spec + service name.
+
 ### Feedback loop
-> `banking-reviewer` returns `changes_requested` → invoke `banking-backend-dev` again with prior artifact + reviewer comments, increment `iteration`.
+> `banking-reviewer-be` or `banking-reviewer-fe` returns `changes_requested` → invoke only the failing dev agent again with prior artifact + reviewer comments, increment `iteration`. The approved side does NOT re-run.
 
 ## Decision Rules
 
