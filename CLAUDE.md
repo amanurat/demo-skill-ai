@@ -38,20 +38,21 @@ You (main Claude) are the **Player / Orchestrator**. When the user gives a banki
 
 All agents live under [.claude/agents/](.claude/agents/). Trigger them via Task tool.
 
-| # | `subagent_type` | Role | When to invoke |
-|---|---|---|---|
-| 0 | `banking-player` | Orchestrator (self-doc) | (You are this — reference for your own playbook) |
-| 1 | [`banking-ba`](.claude/agents/banking-ba.md) | Business Analyst | Raw requirement → user stories + acceptance criteria |
-| 2 | [`banking-solution-architect`](.claude/agents/banking-solution-architect.md) | Solution Architect | User stories → service map + tech decisions |
-| 3 | [`banking-tech-lead`](.claude/agents/banking-tech-lead.md) | Tech Lead | Architecture → OpenAPI + DB schema + ADRs |
-| 4 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | API contract → UI implementation |
-| 5 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | API contract → microservice implementation |
-| 6 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Angular artifacts → review in parallel with BE reviewer |
-| 7 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Spring Boot artifacts → review in parallel with FE reviewer |
-| 8 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | After both reviewers approve → security review + audit |
-| 9 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | Phase 1 (shift-left): test plan after BA · Phase 2: automation after security |
-| 10 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA |
-| 11 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Single-stack PRs or when FE+BE split is not needed |
+| # | `subagent_type` | Role | SPMC Role | When to invoke |
+|---|---|---|---|---|
+| 0 | `banking-player` | Orchestrator (self-doc) | ITPM/Squad Lead | (You are this — reference for your own playbook) |
+| 1 | [`banking-ba`](.claude/agents/banking-ba.md) | Business Analyst | Business Analyst | Raw requirement → user stories + AC + NFRs |
+| 2 | [`banking-designer`](.claude/agents/banking-designer.md) | UX/UI Designer | Designer | Phase 1: LO-FI after BA · Phase 2: HI-FI after SA (parallel with SA) |
+| 3 | [`banking-solution-architect`](.claude/agents/banking-solution-architect.md) | Solution Architect | Solution Architect | User stories → service map + tech decisions (parallel with Designer) |
+| 4 | [`banking-tech-lead`](.claude/agents/banking-tech-lead.md) | Tech Lead | Technical Lead | Architecture + HI-FI design → OpenAPI + DB schema + ADRs |
+| 5 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | Developer | API contract + design spec → UI implementation |
+| 6 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | Developer | API contract → microservice implementation |
+| 7 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Technical Lead | Angular artifacts → parallel review with BE reviewer |
+| 8 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Technical Lead | Spring Boot artifacts → parallel review with FE reviewer |
+| 9 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | DevSecOps | After both reviewers approve → security review + audit |
+| 10 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | TQA | Phase 1 (shift-left): test plan after BA · Phase 2: automation after security |
+| 11 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | DevSecOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA |
+| 12 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Technical Lead | Single-stack PRs or when FE+BE split is not needed |
 
 ---
 
@@ -61,22 +62,24 @@ All agents live under [.claude/agents/](.claude/agents/). Trigger them via Task 
 User requirement
     ↓
 [banking-ba] → user stories, AC
-    ↓                           ↘ shift-left
-[banking-solution-architect]    [banking-qa] Phase 1 — test plan
+    ↓               ↓                    ↘ shift-left
+[banking-sa]  [banking-designer P1]    [banking-qa P1] — test plan
+    ↓               ↓
+[banking-designer P2 — HI-FI]
     ↓
-[banking-tech-lead] → API contract, DB schema
+[banking-tech-lead] → OpenAPI + DB schema + design tokens
     ↓                    ↓                   ↘ shift-left
-[banking-frontend-dev]  [banking-backend-dev] [banking-devops] Phase 1 — CI/CD skeleton
+[banking-frontend-dev]  [banking-backend-dev] [banking-devops P1] — CI/CD skeleton
     ↓                            ↓
 [banking-reviewer-fe]  +  [banking-reviewer-be]   (parallel)
     ↓                            ↓
-              [banking-security] (after BOTH reviewers approve)
+              [banking-security]
                        ↓
-              [banking-security] → vuln scan
+              [banking-qa P2] — full automation
                        ↓
-              [banking-qa] → test plan + tests
+              [banking-devops P2] — full deploy
                        ↓
-              [banking-devops] → CI/CD + deploy
+                     ✅ DoD met
                        ↓
                      ✅ DoD met
 ```

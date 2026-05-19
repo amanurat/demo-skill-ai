@@ -69,6 +69,64 @@ Every inter-agent communication MUST be a single JSON object conforming to the s
 }
 ```
 
+### Designer Phase 1 (LO-FI) → Player
+
+```json
+{
+  "user_journeys": [
+    {
+      "story_id": "US-001",
+      "steps": [{ "step": 1, "actor": "Customer", "action": "...", "screen": "transfer-form" }],
+      "error_paths": [{ "trigger": "Insufficient balance", "screen": "transfer-form", "message": "..." }]
+    }
+  ],
+  "wireframes": [
+    {
+      "screen_id": "transfer-form",
+      "title": "Transfer Form",
+      "components": [{ "type": "AmountInput", "label": "...", "props": [] }],
+      "accessibility": ["..."],
+      "banking_notes": "..."
+    }
+  ]
+}
+```
+
+### Designer Phase 2 (HI-FI) → Tech Lead + Frontend Dev
+
+```json
+{
+  "design_tokens": {
+    "colors": { "primary": "#1E3A8A", "danger": "#DC2626" },
+    "typography": { "heading_1": "24px/700/Inter" },
+    "spacing": { "base": "8px" },
+    "border_radius": { "button": "8px" }
+  },
+  "component_specs": [
+    {
+      "name": "AmountInput",
+      "props": ["value: number", "currency: string", "max: number"],
+      "states": ["default", "focused", "error", "disabled"],
+      "error_messages": { "exceeds_balance": "ยอดเงินเกินยอดคงเหลือ" },
+      "accessibility": "role=spinbutton, aria-label=จำนวนเงิน"
+    }
+  ],
+  "screen_specs": [
+    {
+      "screen_id": "transfer-confirm",
+      "loading_state": "Skeleton loader",
+      "error_state": "Toast notification",
+      "banking_notes": "Double-confirm pattern; CTA disabled 2s after tap"
+    }
+  ],
+  "handoff_notes": {
+    "frontend_dev": "...",
+    "tech_lead": "..."
+  },
+  "accessibility_checklist": ["Color contrast ≥ 4.5:1", "Focus ring visible"]
+}
+```
+
 ### Solution Architect → Tech Lead
 
 ```json

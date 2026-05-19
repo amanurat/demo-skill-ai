@@ -4,39 +4,47 @@
 
 ```mermaid
 flowchart TD
-    Req([User Requirement]) --> BA[banking-ba]
+    Req([User Requirement]) --> BA[banking-ba\nUser Stories · AC · NFRs]
 
-    BA --> SA[banking-solution-architect]
-    BA -.->|shift-left Phase 1| QA_P1[banking-qa\nwrite test plan]
+    BA --> SA[banking-solution-architect\nService Map · Events · ADRs]
+    BA -.->|parallel Phase 1| DS_P1[banking-designer P1\nUser Journey · LO-FI Wireframes]
+    BA -.->|shift-left Phase 1| QA_P1[banking-qa P1\nTest Plan]
 
-    SA --> TL[banking-tech-lead]
+    SA --> DS_P2[banking-designer P2\nHI-FI Specs · Design Tokens]
+    DS_P1 -.->|feeds into| DS_P2
 
-    TL --> FE[banking-frontend-dev]
-    TL --> BE[banking-backend-dev]
-    TL -.->|shift-left Phase 1| DO_P1[banking-devops\nCI/CD skeleton]
+    SA --> TL
+    DS_P2 -->|design handoff| TL[banking-tech-lead\nOpenAPI · DB Schema · ADRs]
 
-    FE --> RV_FE[banking-reviewer-fe]
-    BE --> RV_BE[banking-reviewer-be]
+    TL --> FE[banking-frontend-dev\nAngular UI]
+    TL --> BE[banking-backend-dev\nSpring Boot Service]
+    TL -.->|shift-left Phase 1| DO_P1[banking-devops P1\nCI/CD Skeleton · Dockerfile]
 
-    RV_FE -->|both approved| SEC[banking-security]
+    FE --> RV_FE[banking-reviewer-fe\nAngular Specialist]
+    BE --> RV_BE[banking-reviewer-be\nJava Specialist]
+
+    RV_FE -->|both approved| SEC[banking-security\nOWASP · SAST · PCI-DSS]
     RV_BE -->|both approved| SEC
 
-    SEC --> QA[banking-qa\nPhase 2 full automation]
+    SEC --> QA[banking-qa P2\nFull Automation · Perf · E2E]
     QA_P1 -.->|test plan ready| QA
 
-    QA --> DO[banking-devops\nPhase 2 full deploy]
+    QA --> DO[banking-devops P2\nFull Deploy · Helm · Grafana]
     DO_P1 -.->|skeleton ready| DO
 
     DO --> Done([✅ DoD met])
 
+    style DS_P1 fill:#fce7f3,stroke:#db2777
+    style DS_P2 fill:#fce7f3,stroke:#db2777
     style QA_P1 fill:#fef9c3,stroke:#ca8a04
     style DO_P1 fill:#fef9c3,stroke:#ca8a04
     style Done fill:#22c55e,color:#fff
     style Req fill:#3b82f6,color:#fff
 ```
 
-> **เส้นประ (-.->)** = shift-left parallel track ที่รันพร้อมกับ main flow
+> **เส้นประ (-.->)** = shift-left / parallel track ที่รันพร้อมกับ main flow
 > **เส้นทึบ (-->)** = sequential dependency ที่ต้องรอผล
+> **สีชมพู** = Designer track · **สีเหลือง** = Shift-left track
 
 ## Feedback Loops
 
