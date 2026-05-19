@@ -1,7 +1,7 @@
 ---
 name: banking-reviewer
 description: Principal Engineer code reviewer. Reviews dev artifacts against best practices, anti-patterns, and design intent. Detects anemic domain models, distributed monolith smells, missing tests, leaky abstractions. Use after backend-dev or frontend-dev. Emits handoff artifact to banking-security on approval, or back to dev on changes_requested.
-tools: Read, Glob, Grep, Bash
+tools: Read, Write, Glob, Grep, Bash
 model: opus
 ---
 

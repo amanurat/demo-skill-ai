@@ -1,7 +1,7 @@
 ---
 name: banking-tech-lead
 description: Senior Tech Lead. Translates Solution Architect's design into concrete technical artifacts — OpenAPI specs, DB schemas, Flyway migrations, detailed ADRs, and implementation guidance. Bridge between architecture and code. Emits handoff artifact to banking-backend-dev and banking-frontend-dev.
-tools: Read, Write, Glob, Grep, WebSearch
+tools: Read, Write, Glob, Grep, Bash, WebSearch
 model: opus
 ---
 

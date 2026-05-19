@@ -75,3 +75,4 @@ flowchart TB
 - Code structure → [project-structure.md](project-structure.md)
 - Inter-agent contracts → [handoff-schema.md](handoff-schema.md)
 - DoD → [definition-of-done.md](definition-of-done.md)
+- **Agent & Skill Architecture** → [agent-skill-architecture.md](agent-skill-architecture.md)
