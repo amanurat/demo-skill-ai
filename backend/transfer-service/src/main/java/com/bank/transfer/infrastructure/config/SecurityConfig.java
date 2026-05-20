@@ -26,7 +26,8 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true)
+// v1 scaffold: method security disabled — no JWT principal available locally.
+// US-006: re-enable with @EnableMethodSecurity(prePostEnabled = true) when JWT is wired.
 public class SecurityConfig {
 
     /**
@@ -56,8 +57,9 @@ public class SecurityConfig {
                     "/swagger-ui/**",
                     "/swagger-ui.html"
                 ).permitAll()
-                // All transfer API endpoints require authentication
-                .anyRequest().authenticated()
+                // v1 scaffold: permit-all (no identity-service JWKS available locally).
+                // US-006: flip to .anyRequest().authenticated() + oauth2ResourceServer JWT.
+                .anyRequest().permitAll()
             );
         // v1: no real JWT issuer configured — permit-all approach for scaffold.
         // Production wiring: uncomment the block below and supply issuer-uri via Vault.

@@ -55,7 +55,7 @@ services:
     networks:
       - banking-local
     ports:
-      - "5432:5432"
+      - "5433:5432"    # 5433 on host to avoid conflict with other local postgres instances
     environment:
       POSTGRES_DB: transfer_db
       POSTGRES_USER: transfer_user
@@ -85,7 +85,7 @@ services:
     networks:
       - banking-local
     ports:
-      - "8080:8080"    # Application HTTP
+      - "8081:8080"    # 8081 on host to avoid conflict with other local services
       - "9090:9090"    # Actuator / management (separate port — Security ITEM-9)
     depends_on:
       postgres:
