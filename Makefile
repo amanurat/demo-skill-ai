@@ -1,12 +1,25 @@
+# Load .env — single source of truth for credentials and ports
+ifneq (,$(wildcard .env))
+  include .env
+  export
+endif
+
+DB_PORT_HOST  ?= 5433
+APP_PORT_HOST ?= 8081
+MGMT_PORT_HOST ?= 9090
+POSTGRES_USER ?= transfer_user
+POSTGRES_PASSWORD ?= transfer_pass
+POSTGRES_DB   ?= transfer_db
+
 COMPOSE  = docker compose -f infra/docker-compose.yml
-APP_URL  = http://localhost:8081
-MGMT_URL = http://localhost:9090
+APP_URL  = http://localhost:$(APP_PORT_HOST)
+MGMT_URL = http://localhost:$(MGMT_PORT_HOST)
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs test ps clean diagrams diagrams-svg diagrams-png
+.PHONY: help up down restart logs test ps clean creds diagrams diagrams-svg diagrams-png
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
+	@grep -hE '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # ---------------------------------------------------------------------------
@@ -37,6 +50,17 @@ test: ## Run API smoke tests against localhost
 
 clean: ## Stop containers and wipe volumes (fresh DB next time)
 	$(COMPOSE) down -v
+
+creds: ## Print DB connection info (use this for DBeaver / TablePlus / psql)
+	@echo ""
+	@echo "  Host     : localhost"
+	@echo "  Port     : $(DB_PORT_HOST)"
+	@echo "  Database : $(POSTGRES_DB)"
+	@echo "  Username : $(POSTGRES_USER)"
+	@echo "  Password : $(POSTGRES_PASSWORD)"
+	@echo ""
+	@echo "  psql: psql -h localhost -p $(DB_PORT_HOST) -U $(POSTGRES_USER) -d $(POSTGRES_DB)"
+	@echo ""
 
 # ---------------------------------------------------------------------------
 # Diagrams

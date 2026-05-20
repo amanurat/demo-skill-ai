@@ -12,14 +12,19 @@
 #                    ships in US-007. Uncomment when ready.
 #
 # Usage:
-#   docker compose up -d postgres
-#   docker compose up -d transfer-service
-#   docker compose up -d       (full stack including observability)
-#   docker compose logs -f transfer-service
-#   docker compose down -v     (remove containers + volumes)
+#   make up        — start full stack
+#   make restart   — rebuild app after code change
+#   make down      — stop containers
+#   make creds     — print DB connection info
+#
+# Credentials: defined once in ../.env (copy from ../.env.example)
 # =============================================================================
 
 version: "3.9"
+
+# Load credentials from ../.env (single source of truth)
+# Run: cp .env.example .env  (from project root)
+
 
 # ---------------------------------------------------------------------------
 # Shared network — all services communicate on this bridge
@@ -55,13 +60,11 @@ services:
     networks:
       - banking-local
     ports:
-      - "5433:5432"    # 5433 on host to avoid conflict with other local postgres instances
+      - "${DB_PORT_HOST}:5432"   # DB_PORT_HOST from .env (default 5433)
     environment:
-      POSTGRES_DB: transfer_db
-      POSTGRES_USER: transfer_user
-      # Local dev only — Vault CSI inject replaces this in K8s
-      # Security ITEM-4: no default in application.yml; set here for local dev only
-      POSTGRES_PASSWORD: transfer_pass_local_dev_only
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # from .env
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d:ro
@@ -85,8 +88,8 @@ services:
     networks:
       - banking-local
     ports:
-      - "8081:8080"    # 8081 on host to avoid conflict with other local services
-      - "9090:9090"    # Actuator / management (separate port — Security ITEM-9)
+      - "${APP_PORT_HOST}:8080"   # APP_PORT_HOST from .env (default 8081)
+      - "${MGMT_PORT_HOST}:9090" # MGMT_PORT_HOST from .env (default 9090)
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,11 +97,10 @@ services:
       # Spring profile — uses application.yml defaults + overrides below
       SPRING_PROFILES_ACTIVE: local
 
-      # Database connection
-      DB_URL: jdbc:postgresql://postgres:5432/transfer_db
-      DB_USERNAME: transfer_user
-      # Local dev only — DO NOT replicate this pattern in K8s (use Vault CSI)
-      DB_PASSWORD: transfer_pass_local_dev_only
+      # Database connection — all values from .env (single source of truth)
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_POOL_MAX: "10"
 
       # Management port isolation (Security ITEM-9 — actuator on 9090, not 8080)
