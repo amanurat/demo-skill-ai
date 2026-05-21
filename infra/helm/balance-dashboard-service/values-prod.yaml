@@ -43,6 +43,10 @@ config:
     endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
     samplingRate: "0.1"   # 10% sampling in prod under load
 
+  # Redis TLS — Security C-4 requirement; must be "true" in ALL environments
+  # ASSUMPTION-TL-004: at-rest AES-256-GCM confirmed before prod deploy
+  redisTlsEnabled: "true"
+
 # Production: 3 replicas minimum for higher HA margin
 replicaCount: 3
 
@@ -59,3 +63,17 @@ autoscaling:
 podDisruptionBudget:
   enabled: true
   minAvailable: 2
+
+# Production resource sizing — memory request == limit to prevent OOMKilled surprises
+# DevOps P2: after heap profiling under load, set memory request = limit for prod
+resources:
+  requests:
+    cpu: 500m
+    memory: 768Mi
+  limits:
+    cpu: 1000m
+    memory: 768Mi   # request == limit for JVM; prevents OOM scheduling surprises
+
+# Production JVM options — G1GC tuned for throughput; heap bounded by MaxRAMPercentage
+# 768Mi * 75% = 576Mi max heap — sufficient for balance-comparison read workload
+javaOpts: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Djava.security.egd=file:/dev/./urandom"

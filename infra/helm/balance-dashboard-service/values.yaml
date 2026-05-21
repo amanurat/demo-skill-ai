@@ -211,8 +211,21 @@ config:
     port: "8081"
     address: "0.0.0.0"   # NetworkPolicy restricts; needed for ServiceMonitor scrape
 
+  # Redis TLS — Security C-4 requirement; must be "true" in ALL environments
+  # ASSUMPTION-TL-004: at-rest AES-256-GCM confirmed by DevOps P2 redis-cluster-verification
+  # ssl.enabled=true in application.yml; this value documents the K8s-layer intent
+  redisTlsEnabled: "true"
+
   springdoc:
     swaggerUiEnabled: "false"
+
+# ---------------------------------------------------------------------------
+# JVM options — container-aware tuning
+# Overridable per environment via --set javaOpts=...
+# Dockerfile sets these as ENV JAVA_OPTS defaults; this values field allows
+# Helm to inject environment-specific overrides via the deployment env block.
+# ---------------------------------------------------------------------------
+javaOpts: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
 
 # ---------------------------------------------------------------------------
 # Topology spread — distribute pods across 2 AZs

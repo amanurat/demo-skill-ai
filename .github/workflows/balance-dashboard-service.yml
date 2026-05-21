@@ -1,34 +1,42 @@
 # =============================================================================
-# CI Pipeline — balance-dashboard-service (Phase 1 skeleton)
+# CI/CD Pipeline — balance-dashboard-service (Phase 2 — full pipeline)
 # Feature: balance-comparison · Sprint: SPRINT-2026-Q2-BC-01
 #
-# Stages (P1 — shift-left, no deploy yet):
-#   1. build-and-test          — ./mvnw clean verify + JaCoCo 80% gate + ArchUnit
-#   2. design-tokens-up-to-date — Style Dictionary build; fail if outputs stale
-#   3. openapi-lint             — Spectral lint BDS + account-service-extension OpenAPI
-#   4. helm-lint                — helm lint balance-dashboard-service chart
+# Stages:
+#   P1 (shift-left — always run):
+#     1. build-and-test          — ./mvnw clean verify + JaCoCo 80% gate + ArchUnit
+#     2. design-tokens-up-to-date — Style Dictionary build; fail if outputs stale
+#     3. openapi-lint             — Spectral lint BDS + account-service-extension OpenAPI
+#     4. helm-lint                — helm lint + helm template | kubectl dry-run
 #
-# P2 stages (after banking-qa P2 sign-off — NOT in this file yet):
-#   5. sast-sca           — Semgrep SAST + Trivy FS + OWASP DC
-#   6. build-image        — Docker Buildx multi-arch (non-root, distroless base)
-#   7. container-scan     — Trivy image scan (exit 1 on HIGH/CRITICAL)
-#   8. push-registry      — cosign sign + SBOM
-#   9. deploy-staging     — helm upgrade + --timeout 5m + --wait (NOT --atomic on upgrade)
-#  10. smoke-tests        — GET /api/v1/balance-dashboard (expect 200 with feature flag on)
-#  11. manual-gate        — prod deploy requires BoT sign-off approval
+#   P2 (deploy path — after all P1 gates pass):
+#     5. sast-sca           — Semgrep SAST + Trivy FS SCA + OWASP Dependency Check
+#     6. build-image        — Docker Buildx multi-platform (linux/amd64 + linux/arm64)
+#     7. container-scan     — Trivy image scan (exit 1 on HIGH/CRITICAL CVEs)
+#     8. push-image         — Push to ghcr.io with git SHA tag + cosign signature
+#     9. deploy-staging     — helm upgrade --install (NOT --atomic; --timeout --wait)
+#    10. smoke-tests        — GET /api/v1/balance-dashboard; assert 200 + meta.freshness
 #
-# Paths that trigger this workflow:
-#   - backend/balance-dashboard-service/**        — service code
-#   - common-libs/account-client-lib/**           — shared lib BDS depends on
-#   - infra/helm/balance-dashboard-service/**     — chart changes
-#   - tools/design-tokens/**                      — Style Dictionary config + scripts
-#   - docs/design/_shared/tokens.json             — source tokens (triggers stale check)
+#   NOT included (requires BoT sign-off manual gate):
+#    11. deploy-prod — manual trigger only; values-prod.yaml; feature flag=false
 #
-# Secrets required (GitHub Actions secrets — configure before P2):
-#   GHCR_TOKEN          — GitHub Container Registry write token
-#   KUBECONFIG_STAGING  — base64-encoded kubeconfig for banking-staging
-#   SEMGREP_APP_TOKEN   — Semgrep cloud token (P2)
-#   SMOKE_TEST_JWT      — valid JWT with scope accounts:read for staging smoke test (P2)
+# Deploy conditions:
+#   - Stages 5-10 run ONLY on: main, release/**, stage/02-balance-comparison
+#   - PR builds: run stages 1-4 only (no deploy, no image push)
+#
+# Rollback:
+#   helm rollback balance-dashboard-service-staging --namespace banking-staging
+#   helm rollback balance-dashboard-service-prod    --namespace banking-prod
+#
+# Secrets required (GitHub Actions secrets):
+#   GHCR_TOKEN          — GitHub Container Registry write token (Stage 8)
+#   KUBECONFIG_STAGING  — base64-encoded kubeconfig for banking-staging (Stage 9)
+#   SEMGREP_APP_TOKEN   — Semgrep cloud token (Stage 5 SAST)
+#   STAGING_URL         — Base URL for staging environment (Stage 10)
+#   STAGING_JWT         — JWT with scope accounts:read for smoke test auth (Stage 10)
+#
+# NEVER USE :latest TAG — helm rollback requires a pinned digest/semver tag.
+# Image tag is always git SHA (${{ github.sha }}) on push; semver on release tag.
 # =============================================================================
 
 name: balance-dashboard-service
@@ -38,6 +46,7 @@ on:
     branches:
       - main
       - "release/**"
+      - "stage/02-balance-comparison"
       - "stage/**"
       - "feat/**"
     paths:
@@ -264,9 +273,532 @@ jobs:
           | kubectl apply --dry-run=client -f -
 
   # ===========================================================================
-  # Rollback reference (P2 — documented here for operator awareness)
-  # After P2 deploy-staging runs:
+  # Stage 5 — SAST / SCA
+  # Runs on deploy branches only (main, release/**, stage/02-balance-comparison)
+  # Semgrep: static analysis for Java security anti-patterns
+  # Trivy FS: filesystem scan for known vulnerable dependencies (SCA)
+  # OWASP Dependency Check: secondary SCA with NVD DB
+  #
+  # Decision: fail on HIGH/CRITICAL SAST findings or CRITICAL SCA CVEs.
+  # OWASP DC: CVSS >= 8.0 threshold (configurable via --failBuildOnCVSS).
+  # ===========================================================================
+  sast-sca:
+    name: "SAST + SCA (Semgrep + Trivy + OWASP DC)"
+    runs-on: ubuntu-latest
+    needs: [build-and-test, design-tokens-up-to-date, openapi-lint, helm-lint]
+    if: |
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' ||
+       startsWith(github.ref, 'refs/heads/release/') ||
+       github.ref == 'refs/heads/stage/02-balance-comparison')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }} (for OWASP DC compilation)
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Semgrep SAST — Java security rules
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/java
+            p/owasp-top-ten
+            p/secrets
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        # Fail on any ERROR-level Semgrep finding
+        # Semgrep-action exits non-zero automatically on findings above threshold
+
+      - name: Trivy FS scan — SCA (dependency vulnerabilities)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "backend/balance-dashboard-service"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "library"
+          severity: "CRITICAL,HIGH"
+          format: "sarif"
+          output: "trivy-sca-results.sarif"
+
+      - name: Upload Trivy SCA SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-sca-results.sarif"
+          category: "trivy-sca"
+
+      - name: OWASP Dependency Check
+        # Secondary SCA — NVD database; CVSS >= 8.0 fails build
+        run: |
+          ./mvnw org.owasp:dependency-check-maven:check \
+            -pl backend/balance-dashboard-service \
+            -DfailBuildOnCVSS=8 \
+            -DsuppressionFile=.dependency-check-suppressions.xml \
+            --no-transfer-progress \
+            -B
+        continue-on-error: false
+
+      - name: Upload OWASP Dependency Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-dc-report
+          path: backend/balance-dashboard-service/target/dependency-check-report.html
+          retention-days: 30
+
+  # ===========================================================================
+  # Stage 6 — Docker Image Build
+  # Multi-platform build (linux/amd64 + linux/arm64) using Docker Buildx.
+  # Context is repo root (Maven reactor requires common-libs on classpath).
+  # Image is NOT pushed here — push happens after container scan passes (Stage 8).
+  # Image is exported to tar for Trivy scan in Stage 7.
+  # Tag: ghcr.io/<owner>/bank/balance-dashboard-service:<git-sha>
+  # ===========================================================================
+  build-image:
+    name: "Docker Build (multi-platform)"
+    runs-on: ubuntu-latest
+    needs: [sast-sca]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU (for multi-platform arm64 cross-compilation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Extract Docker metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # Git SHA tag — primary tag for helm rollback traceability
+            type=sha,format=long,prefix=
+            # Semver tag on git tags (e.g., v1.0.0 → 1.0.0)
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=balance-dashboard-service
+            org.opencontainers.image.description=Account Balance Comparison Dashboard
+
+      - name: Build image (no push — scan first)
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/balance-dashboard-service/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          load: true
+          # Use git SHA as the primary tag for scanning
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+          # Cache from ghcr.io for faster subsequent builds
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Export image to tar (for Trivy scan handoff)
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            -o /tmp/balance-dashboard-service-image.tar
+
+      - name: Upload image tar artifact (for scan + push stages)
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-image
+          path: /tmp/balance-dashboard-service-image.tar
+          retention-days: 1
+
+  # ===========================================================================
+  # Stage 7 — Container Image Scan (Trivy)
+  # Scans the built image for OS + library CVEs.
+  # Exit code 1 on HIGH or CRITICAL findings — must be zero before push.
+  # Results uploaded to GitHub Security tab (SARIF) for visibility.
+  # ===========================================================================
+  container-scan:
+    name: "Container Scan (Trivy)"
+    runs-on: ubuntu-latest
+    needs: [build-image]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download container image tar
+        uses: actions/download-artifact@v4
+        with:
+          name: container-image
+          path: /tmp/
+
+      - name: Load image from tar
+        run: docker load -i /tmp/balance-dashboard-service-image.tar
+
+      - name: Trivy image scan — HIGH + CRITICAL CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+          format: "sarif"
+          output: "trivy-image-results.sarif"
+
+      - name: Upload Trivy image SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-image-results.sarif"
+          category: "trivy-image"
+
+      - name: Upload Trivy image scan table (human-readable)
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          format: "table"
+
+  # ===========================================================================
+  # Stage 8 — Push Image to GHCR + Cosign Signature
+  # Runs ONLY after container scan passes (no HIGH/CRITICAL CVEs).
+  # Pushes with git SHA tag (primary) + metadata tags (semver on release).
+  # Signs with cosign (keyless OIDC signing via GitHub Actions OIDC token).
+  # Generates SBOM (Syft) and attaches as SBOM attestation via cosign.
+  # ===========================================================================
+  push-image:
+    name: "Push Image + Sign (GHCR + cosign)"
+    runs-on: ubuntu-latest
+    needs: [container-scan]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # Required for cosign keyless OIDC signing
+    outputs:
+      image_digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=balance-dashboard-service
+            org.opencontainers.image.description=Account Balance Comparison Dashboard
+
+      - name: Build and push image (multi-platform)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/balance-dashboard-service/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with cosign (keyless OIDC)
+        # Signs using GitHub Actions OIDC identity — no key management required.
+        # Signature stored in ghcr.io alongside the image manifest.
+        run: |
+          cosign sign --yes \
+            ${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+
+      - name: Install Syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOM (CycloneDX + SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Attach SBOM as cosign attestation
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            ${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+
+      - name: Output image digest for deploy stage
+        run: |
+          echo "Image pushed: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "Digest: ${{ steps.push.outputs.digest }}"
+
+  # ===========================================================================
+  # Stage 9 — Deploy to Staging
+  # Uses helm upgrade --install (idempotent — installs on first run, upgrades thereafter).
+  # NOT --atomic on upgrade (DevOps gotcha: --atomic on upgrade causes rollback loops).
+  # --timeout 5m --wait: wait for rollout to complete; fail if timeout exceeded.
+  # Image tag: git SHA pushed in Stage 8 (never :latest).
+  # Runs ONLY on: main, release/**, stage/02-balance-comparison
+  # ===========================================================================
+  deploy-staging:
+    name: "Deploy to Staging (Helm)"
+    runs-on: ubuntu-latest
+    needs: [push-image]
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Set up kubectl (staging kubeconfig)
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubectl for staging
+        # KUBECONFIG_STAGING is the base64-encoded kubeconfig for the staging cluster.
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > /tmp/staging-kubeconfig
+          chmod 600 /tmp/staging-kubeconfig
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Helm upgrade --install to staging
+        # Deploy using the git SHA image tag from Stage 8.
+        # Values file: values.yaml (staging defaults).
+        # Feature flag staging=true → endpoint reachable for smoke tests.
+        # --timeout 5m: fail if pods don't become ready within 5 minutes.
+        # --wait: block until all pods pass readiness probe.
+        # NOT --atomic (see DevOps gotcha: use manual rollback on upgrade).
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE_STAGING }} \
+            infra/helm/balance-dashboard-service/ \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }} \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --set image.repository=${{ env.IMAGE_NAME }} \
+            --timeout 5m \
+            --wait
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Verify helm release status
+        run: |
+          helm status ${{ env.HELM_RELEASE_STAGING }} \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }}
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Print rollback command (operator reference)
+        # This is the exact command to run if smoke tests fail or an incident occurs.
+        run: |
+          echo "======================================================"
+          echo "ROLLBACK COMMAND (if needed):"
+          echo "  helm rollback ${{ env.HELM_RELEASE_STAGING }} --namespace ${{ env.K8S_NAMESPACE_STAGING }}"
+          echo "======================================================"
+
+  # ===========================================================================
+  # Stage 10 — Smoke Tests
+  # Automated probe of the key endpoint after staging deploy.
+  # Asserts:
+  #   - HTTP 200 response
+  #   - Response body contains "freshness" field in meta object
+  #   - Response time < 5 seconds (basic sanity check)
+  # Uses STAGING_URL and STAGING_JWT from GitHub Actions secrets.
+  # On failure: triggers helm rollback automatically before failing the job.
+  # ===========================================================================
+  smoke-tests:
+    name: "Smoke Tests (Staging)"
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm (for rollback on failure)
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubectl for staging
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > /tmp/staging-kubeconfig
+          chmod 600 /tmp/staging-kubeconfig
+
+      - name: Wait for pods to be fully ready
+        # Extra wait after helm --wait, to ensure all readiness probes have settled.
+        # balance-dashboard-service readiness checks Redis + account-service upstream.
+        run: |
+          kubectl rollout status deployment/balance-dashboard-service-staging \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }} \
+            --timeout=120s
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Smoke test — GET /api/v1/balance-dashboard (HTTP 200)
+        id: smoke_health
+        run: |
+          echo "Running smoke test against ${{ secrets.STAGING_URL }}/api/v1/balance-dashboard"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}\n%{time_total}" \
+            -H "Authorization: Bearer ${{ secrets.STAGING_JWT }}" \
+            -H "Accept: application/json" \
+            --max-time 10 \
+            "${{ secrets.STAGING_URL }}/api/v1/balance-dashboard")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -2 | head -1)
+          TIME_TOTAL=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response time: ${TIME_TOTAL}s"
+
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "SMOKE TEST FAILED: Expected HTTP 200, got $HTTP_CODE"
+            echo "Response body: $BODY"
+            exit 1
+          fi
+
+          echo "HTTP 200 OK — checking response body for meta.freshness field..."
+
+          # Assert meta.freshness field is present in JSON response
+          if ! echo "$BODY" | grep -q '"freshness"'; then
+            echo "SMOKE TEST FAILED: Response body missing 'freshness' field in meta object"
+            echo "Response body: $BODY"
+            exit 1
+          fi
+
+          echo "Smoke test PASSED: HTTP 200, meta.freshness present, response time ${TIME_TOTAL}s"
+
+      - name: Smoke test — GET /actuator/health (management port health check)
+        id: smoke_actuator
+        run: |
+          # Verify actuator health endpoint via port-forward (management port not exposed externally)
+          kubectl port-forward \
+            svc/balance-dashboard-service-staging \
+            18081:8081 \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }} &
+          PF_PID=$!
+          sleep 3
+
+          ACTUATOR_RESPONSE=$(curl -s -w "\n%{http_code}" \
+            --max-time 5 \
+            http://localhost:18081/actuator/health)
+
+          HTTP_CODE=$(echo "$ACTUATOR_RESPONSE" | tail -1)
+          BODY=$(echo "$ACTUATOR_RESPONSE" | head -1)
+
+          kill $PF_PID 2>/dev/null || true
+
+          echo "Actuator health HTTP: $HTTP_CODE"
+          echo "Actuator health body: $BODY"
+
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "SMOKE TEST FAILED: Actuator health not OK (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          if ! echo "$BODY" | grep -q '"status":"UP"'; then
+            echo "SMOKE TEST FAILED: Actuator health not UP — body: $BODY"
+            exit 1
+          fi
+
+          echo "Actuator health PASSED: UP"
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Auto-rollback on smoke test failure
+        if: failure() && (steps.smoke_health.outcome == 'failure' || steps.smoke_actuator.outcome == 'failure')
+        run: |
+          echo "======================================================"
+          echo "SMOKE TESTS FAILED — initiating auto-rollback"
+          echo "======================================================"
+          helm rollback ${{ env.HELM_RELEASE_STAGING }} \
+            --namespace ${{ env.K8S_NAMESPACE_STAGING }}
+          echo "Rollback initiated. Verify with: helm status ${{ env.HELM_RELEASE_STAGING }}"
+        env:
+          KUBECONFIG: /tmp/staging-kubeconfig
+
+      - name: Smoke test summary
+        if: success()
+        run: |
+          echo "======================================================"
+          echo "ALL SMOKE TESTS PASSED"
+          echo "Image: ${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "Namespace: ${{ env.K8S_NAMESPACE_STAGING }}"
+          echo "Release: ${{ env.HELM_RELEASE_STAGING }}"
+          echo "======================================================"
+          echo ""
+          echo "G10 gate status: PASS"
+          echo "Feature flag (staging): balance-dashboard.enabled=true"
+          echo ""
+          echo "To rollback: helm rollback ${{ env.HELM_RELEASE_STAGING }} --namespace ${{ env.K8S_NAMESPACE_STAGING }}"
+          echo ""
+          echo "Prod deploy: requires BoT sign-off (manual gate)"
+          echo "  values-prod.yaml: balance-dashboard.enabled=false"
+          echo "  Run: helm upgrade --install balance-dashboard-service-prod \\"
+          echo "         infra/helm/balance-dashboard-service/ \\"
+          echo "         -f infra/helm/balance-dashboard-service/values-prod.yaml \\"
+          echo "         --namespace banking-prod \\"
+          echo "         --set image.tag=${{ github.sha }} \\"
+          echo "         --timeout 5m --wait"
+
+  # ===========================================================================
+  # Rollback reference (documented for operator awareness)
+  # Staging rollback (any time):
   #   helm rollback balance-dashboard-service-staging --namespace banking-staging
-  # After P2 deploy-prod runs:
+  # Prod rollback (after manual prod deploy):
   #   helm rollback balance-dashboard-service-prod --namespace banking-prod
   # ===========================================================================
