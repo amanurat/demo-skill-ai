@@ -1,0 +1,402 @@
+{
+  "artifact_id": "8d3c2f91-5a76-4b29-9e14-7c8a2b6f5d34",
+  "from_agent": "banking-designer",
+  "to_agent": "banking-tech-lead",
+  "phase": "DESIGN",
+  "feature": "balance-comparison",
+  "payload": {
+    "design_tokens": {
+      "colors": {
+        "primary": "#1E3A8A",
+        "primary_tint": "#3B5BB8",
+        "primary_pressed": "#162C6A",
+        "danger": "#DC2626",
+        "danger_tint": "#FEE2E2",
+        "danger_on_tint": "#7F1D1D",
+        "success": "#16A34A",
+        "success_tint": "#DCFCE7",
+        "warning": "#D97706",
+        "warning_tint": "#FEF3C7",
+        "warning_on_tint": "#78350F",
+        "info": "#0284C7",
+        "info_tint": "#E0F2FE",
+        "text_primary": "#0F172A",
+        "text_secondary": "#475569",
+        "text_tertiary": "#64748B",
+        "text_disabled": "#94A3B8",
+        "text_inverse": "#FFFFFF",
+        "text_link": "#1E3A8A",
+        "surface_page": "#F8FAFC",
+        "surface_card": "#FFFFFF",
+        "surface_muted": "#F1F5F9",
+        "border_subtle": "#E2E8F0",
+        "border_default": "#CBD5E1",
+        "border_focus": "#1E3A8A"
+      },
+      "typography": {
+        "heading_1": "24px/29px/700/'Inter','Sarabun',-apple-system,sans-serif",
+        "heading_2": "20px/28px/600/'Inter','Sarabun',-apple-system,sans-serif",
+        "heading_3": "18px/25px/600/'Inter','Sarabun',-apple-system,sans-serif",
+        "body": "16px/24px/400/'Inter','Sarabun',-apple-system,sans-serif",
+        "body_strong": "16px/24px/600/'Inter','Sarabun',-apple-system,sans-serif",
+        "caption": "12px/17px/400/'Inter','Sarabun',-apple-system,sans-serif",
+        "label": "14px/20px/500/'Inter','Sarabun',-apple-system,sans-serif",
+        "amount": "20px/28px/700/'Inter','Sarabun',-apple-system,sans-serif (font-feature-settings: 'tnum' 1, 'lnum' 1 — tabular numerals MANDATORY)",
+        "amount_small": "16px/22px/600/'Inter','Sarabun',-apple-system,sans-serif (font-feature-settings: 'tnum' 1, 'lnum' 1)"
+      },
+      "spacing": {
+        "base": "8px",
+        "scale": [0, 4, 8, 12, 16, 24, 32, 48, 64],
+        "1": "4px",
+        "2": "8px",
+        "3": "12px",
+        "4": "16px",
+        "5": "24px",
+        "6": "32px",
+        "7": "48px",
+        "8": "64px"
+      },
+      "border_radius": {
+        "none": "0px",
+        "sm": "4px",
+        "md": "8px",
+        "lg": "12px",
+        "xl": "16px",
+        "pill": "999px",
+        "button": "8px",
+        "card": "12px",
+        "input": "8px",
+        "badge": "999px"
+      },
+      "source_of_truth": "docs/design/_shared/tokens.json (W3C Design Tokens Community Group format with full scales 50-900, semantic on_base/on_tint pairs, motion, elevation, breakpoint, size, z-index)",
+      "format_note": "This handoff payload contains the schema-required flat shape per handoff-schema.md lines 99-104. The full source is W3C-compliant tokens.json with $value+$type structure. SCSS + CSS-vars are GENERATED — see _shared/README.md for the dual-emit contract.",
+      "scope": "all-features (first authored for balance-comparison; reusable cross-feature)",
+      "color_mode": "light_only_v1 (dark v1.1 deferred; tokens dark-mode-ready by aliasing surface.* and text.*)"
+    },
+    "component_specs": [
+      {
+        "name": "<balance-dashboard-page>",
+        "props": [
+          "state: 'loading' | 'empty' | 'ok' | 'stale' | 'error'",
+          "accounts: ReadonlyArray<AccountView>",
+          "freshness: 'live' | 'snapshot' | 'stale'",
+          "correlationId: string",
+          "@Output refresh: EventEmitter<void>",
+          "@Output rowSelect: EventEmitter<AccountView>"
+        ],
+        "states": ["loading", "empty", "ok", "stale", "error"],
+        "accessibility": "role='main'; aria-labelledby='balance-page-title'; one H1 per route; lang attribute on <html>",
+        "tokens_used": ["color.surface.page", "spacing.7", "breakpoint.mobile"],
+        "banking_notes": "Deterministic state machine; refresh emitter wired to BOTH pull-to-refresh + explicit refresh button (OPEN-D-008)"
+      },
+      {
+        "name": "<balance-page-header>",
+        "props": [
+          "accountCount: number",
+          "freshestBalanceAsOf: string | null",
+          "loading: boolean",
+          "@Output refresh: EventEmitter<void>"
+        ],
+        "states": ["default", "loading", "empty (count=0)", "single (count=1)"],
+        "accessibility": "<h1> programmatic focus on route enter; aria-busy on refresh button; subtitle is i18n-keyed",
+        "tokens_used": ["typography.heading_1", "typography.caption", "color.text.primary", "color.text.secondary", "spacing.4"],
+        "banking_notes": "OPEN-D-011 resolved — subtitle reflects FRESHEST row balanceAsOf, never stalest"
+      },
+      {
+        "name": "<balance-refresh-button>",
+        "props": ["loading: boolean", "@Output click: EventEmitter<void>"],
+        "states": ["default", "hover", "focus", "loading", "disabled"],
+        "accessibility": "aria-label='รีเฟรชยอดเงิน' (i18n key balance-comparison.refresh.aria); icon aria-hidden; aria-busy while loading",
+        "tokens_used": ["size.tap_min (44px)", "size.icon_md (20px)", "color.text.secondary", "color.border.focus"],
+        "banking_notes": "Heroicons outline 'arrow-path' icon (OPEN-D-002 locked)"
+      },
+      {
+        "name": "<balance-account-list>",
+        "props": ["accounts: ReadonlyArray<AccountView>", "loading: boolean", "@Output rowSelect: EventEmitter<AccountView>"],
+        "states": ["default", "loading (aria-busy)"],
+        "accessibility": "role='list' (explicit); aria-label='รายการบัญชีของคุณ...'; aria-busy while loading; Angular @for track accountId",
+        "tokens_used": ["color.surface.page", "spacing.3 (row gap)", "spacing.4 (container padding)"],
+        "banking_notes": "Wrapper only; no own surface — rows carry their own"
+      },
+      {
+        "name": "<balance-account-row>",
+        "props": ["account: AccountView", "totalCount: number", "@Output select: EventEmitter<AccountView>"],
+        "states": ["default", "hover", "focus", "pressed", "stale (when account.isStale=true — adds badge)"],
+        "error_messages": {
+          "null_balance_as_of": "ไม่ทราบเวลาอัปเดต (i18n: balance-comparison.lastUpdated.unknown)",
+          "null_balance": "— (em dash; AC-002-E2)"
+        },
+        "accessibility": "role='listitem'; composed aria-label per template 'บัญชีลำดับที่ {rank} จาก {totalCount}, {typeLabelTH}, ลงท้ายด้วย {last4}, ยอดเงิน {balanceSpoken} บาท, อัปเดตเมื่อ {relativeTimeTH}{, อาจไม่ใช่ยอดล่าสุด}'; tap target ≥ 72×375 px; focus ring 3px",
+        "tokens_used": ["color.surface.card", "color.border.subtle", "border_width.hairline", "size.row_min (72px)", "spacing.3", "spacing.4", "border_radius.card", "color.text.primary", "color.text.secondary", "typography.body_strong", "typography.body", "typography.amount", "typography.caption", "color.border.focus", "border_width.focus"],
+        "banking_notes": "Tie-break visualization NONE (OPEN-D-006); rank badge NONE (OPEN-D-007); NEVER displays full account number or customerId; entire row is single tap target (no nested CTAs)"
+      },
+      {
+        "name": "<balance-account-type-icon>",
+        "props": ["type: 'SAVINGS' | 'CURRENT' | 'FIXED_DEPOSIT'", "size: 'sm' | 'md' | 'lg' = 'md'"],
+        "states": ["default", "row-hover (inherits parent color)", "row-focus (inherits)"],
+        "accessibility": "aria-hidden='true' MANDATORY (Thai label carries semantic per BR-008); no <title>; no role='img'",
+        "tokens_used": ["size.icon_sm/md/lg", "color.text.secondary (via currentColor)"],
+        "banking_notes": "OPEN-D-002 LOCKED — Heroicons outline v2.x MIT; SAVINGS=banknotes, CURRENT=credit-card, FIXED_DEPOSIT=lock-closed"
+      },
+      {
+        "name": "<balance-staleness-badge>",
+        "props": ["lastUpdatedAbsolute: string"],
+        "states": ["default", "hover", "focus (when interactive variant)"],
+        "error_messages": {
+          "tooltip": "ยอดอัปเดตล่าสุดเมื่อ {absoluteISO} (i18n: balance-comparison.stale.tooltip.aria)"
+        },
+        "accessibility": "Non-interactive text (visible to all); icon + Thai text + color = 3 channels; AAA contrast 8.05:1",
+        "tokens_used": ["color.semantic.warning.tint", "color.semantic.warning.on_tint", "border_radius.badge (pill)", "spacing.1", "spacing.2", "typography.label", "size.icon_sm"],
+        "banking_notes": "Color-independence honored; copy 'อาจไม่ใช่ยอดล่าสุด' (i18n: balance-comparison.stale.badge.label); driven by server-computed account.isStale"
+      },
+      {
+        "name": "<balance-staleness-banner>",
+        "props": ["freshness: 'snapshot' | 'stale'", "@Output retry: EventEmitter<void>", "@Output dismiss: EventEmitter<void>"],
+        "states": ["snapshot (default copy)", "stale (stronger urgency copy)", "live (NOT rendered)", "dismissed"],
+        "error_messages": {
+          "snapshot_title": "ยอดเงินอาจไม่เป็นปัจจุบัน",
+          "snapshot_body": "ระบบใช้ข้อมูลล่าสุดที่บันทึกไว้ ลองรีเฟรชอีกครั้งในอีกสักครู่",
+          "stale_title": "ข้อมูลอาจค้างนาน",
+          "stale_body": "กรุณารีเฟรชเพื่อรับข้อมูลล่าสุด"
+        },
+        "accessibility": "role='status'; aria-live='polite' (announced once, no interrupt); aria-labelledby='staleness-banner-title'; dismiss button aria-label='ปิดข้อความ'",
+        "tokens_used": ["color.semantic.warning.tint", "color.semantic.warning.base (4px border-left)", "color.semantic.warning.on_tint", "border_radius.lg", "spacing.3", "spacing.4", "elevation.0 (flat)", "typography.body_strong", "typography.body", "size.icon_md", "size.tap_min"],
+        "banking_notes": "OPEN-D-005 LOCKED — driven by server meta.freshness (per SA event-flows §3.1); non-alarming copy; dismissible per session"
+      },
+      {
+        "name": "<balance-empty-state>",
+        "props": ["showOpenAccountCTA: boolean = false"],
+        "states": ["default"],
+        "accessibility": "role='status' (NOT 'alert' — informational); heading programmatic focus on transition; illustration alt i18n key",
+        "tokens_used": ["color.surface.page", "color.primary.300 (illustration stroke)", "typography.heading_2", "typography.body", "color.text.primary", "color.text.secondary", "color.text.disabled (CTA placeholder)", "spacing.5", "spacing.7"],
+        "banking_notes": "OPEN-D-012 LOCKED — CTA is non-interactive <span aria-disabled='true'>, NOT <button disabled> (avoids confusing focus stop); subtitle copy explicitly cites OPEN-003 exclusion rule"
+      },
+      {
+        "name": "<balance-masked-account-label>",
+        "props": ["value: string (must match ^\\*+\\d{4}$)", "variant: 'inline' | 'block' = 'inline'"],
+        "states": ["default", "block-variant"],
+        "accessibility": "aria-label='ลงท้ายด้วย {last4}' (i18n: account.masked.endingWith)",
+        "tokens_used": ["color.text.secondary", "typography.body (inline) | typography.caption (block)"],
+        "banking_notes": "HARD RULE — only component permitted to render account-number-like content; dev-mode assertion on input format; AC-002-H3"
+      },
+      {
+        "name": "<balance-amount>",
+        "props": ["value: string (BigDecimal-as-string)", "currency: 'THB'", "size: 'default' | 'small' = 'default'"],
+        "states": ["default", "small-variant", "null-value (renders em dash)"],
+        "error_messages": {
+          "null_aria": "ไม่ทราบยอดเงิน"
+        },
+        "accessibility": "aria-label MUST be full spoken form e.g. '128,540 บาท 25 สตางค์' (AC-005-E2); when satang=0 drop suffix; ฿ symbol aria-hidden; NEVER digit-by-digit",
+        "tokens_used": ["color.text.primary", "typography.amount (tabular-nums!) | typography.amount_small", "color.text.secondary (currency code)", "typography.caption"],
+        "banking_notes": "CRITICAL — tabular-nums non-negotiable; FE-dev wraps in stable Angular pipe 'balanceAmount' using Intl.NumberFormat('th-TH', {style:'currency',currency:'THB'}); Security C-2 honored — balance values appear ONLY in this component"
+      },
+      {
+        "name": "<balance-last-updated>",
+        "props": ["value: string | null (ISO-8601)", "locale: 'th' | 'en' = 'th'"],
+        "states": ["default", "hover (desktop)", "focus (tooltip)", "long-press (touch — tooltip 1.5s)", "null-value"],
+        "error_messages": {
+          "unknown_label": "ไม่ทราบเวลาอัปเดต (i18n: balance-comparison.lastUpdated.unknown)"
+        },
+        "accessibility": "aria-describedby points to tooltip; tooltip dismissable with Esc; persistent while focused",
+        "tokens_used": ["color.text.secondary", "color.semantic.warning.on_tint (when row stale)", "typography.caption"],
+        "banking_notes": "OPEN-D-004 LOCKED — thresholds <30s/30s-60s/1m-59m/1h-23h/1d-6d/≥7d-absolute; derived from balanceAsOf NEVER updated_at (OPEN-002)"
+      },
+      {
+        "name": "<balance-skeleton-list> + <balance-skeleton-row>",
+        "props": ["rowCount: number = 3 (fixed — do NOT echo cached count: PII timing leak)"],
+        "states": ["default (no shimmer in v1)"],
+        "accessibility": "list role='list' + aria-busy='true'; each row aria-hidden='true'; SR announces 'กำลังโหลด' once",
+        "tokens_used": ["color.surface.card", "color.neutral.100 (bar bg)", "color.border.subtle", "size.row_min"],
+        "banking_notes": "OPEN-D-009 LOCKED — NO shimmer in v1 (static placeholder only); shape-matched to AccountRow (avoids CLS); keeps skeleton if load > 800ms (do not flicker to error)"
+      },
+      {
+        "name": "<balance-retry-soft-button>",
+        "props": ["label: string (i18n-keyed)", "loading: boolean", "@Output click: EventEmitter<void>"],
+        "states": ["default", "hover", "focus", "loading", "disabled (N/A in v1)"],
+        "accessibility": "<button type='button'>; visible focus ring 3px; aria-busy while loading",
+        "tokens_used": ["color.semantic.warning.on_tint (text + border)", "border_radius.button", "spacing.2", "spacing.3", "size.tap_min", "typography.body_strong"],
+        "banking_notes": "Used inside StalenessBanner; outline style (not solid) — secondary action affordance"
+      },
+      {
+        "name": "<balance-primary-button>",
+        "props": ["label: string", "loading: boolean", "disabled: boolean", "@Output click: EventEmitter<void>"],
+        "states": ["default", "hover", "focus", "pressed", "loading", "disabled"],
+        "accessibility": "<button type='button'>; aria-busy while loading; aria-disabled when disabled; visible focus ring",
+        "tokens_used": ["color.primary.700 (default)", "color.primary.500 (hover)", "color.primary.800 (pressed)", "color.primary.200 (disabled bg)", "color.text.inverse", "color.text.disabled", "border_radius.button", "size.tap_min", "typography.body_strong"],
+        "banking_notes": "BANKING HARD RULE — Double-submit prevention: when loading=true, click suppressed; parent MUST debounce next click 2s after loading→false"
+      },
+      {
+        "name": "<balance-error-state>",
+        "props": ["correlationId: string", "@Output retry: EventEmitter<void>"],
+        "states": ["default"],
+        "error_messages": {
+          "title": "เกิดข้อผิดพลาดในการโหลดข้อมูล (Security C-2: never include balance values, never include account numbers, never mention upstream service names)",
+          "body": "กรุณาลองใหม่อีกครั้ง หรือกลับมาภายในไม่กี่นาที",
+          "correlation_label": "รหัสอ้างอิง: {trace} (สำหรับติดต่อทีมงาน)"
+        },
+        "accessibility": "role='alert'; aria-live='assertive'; heading programmatic focus on entry; retry button aria-busy while retrying",
+        "tokens_used": ["color.surface.page", "color.semantic.danger.base (illustration stroke)", "color.text.primary", "color.text.secondary", "color.text.tertiary (correlationId)", "typography.heading_2", "typography.body", "typography.caption"],
+        "banking_notes": "Security C-2 honored — generic copy only, NO PII, NO upstream service names, NO masked account numbers, NO balance values; 401 redirects to login (does NOT land here); 403 IDOR DOES route here but copy NEVER reveals cross-customer attempt (Security finding 5.3)"
+      }
+    ],
+    "screen_specs": [
+      {
+        "screen_id": "balance-dashboard-default",
+        "title": "Balance Dashboard — default (3-5 accounts, all live)",
+        "viewport": "375 × 812 mobile-first",
+        "loading_state": "Skeleton list (3 rows) via <balance-skeleton-list>",
+        "empty_state": "N/A — switches to balance-dashboard-empty screen",
+        "error_state": "N/A — switches to balance-dashboard-error screen",
+        "banking_notes": "Header NOT sticky (LO-FI commitment); pull-to-refresh AND explicit refresh button (OPEN-D-008); per-row aria-label composed per accessibility-final §3.1 template",
+        "tokens_used": "color.surface.page, color.surface.card, color.text.primary, color.text.secondary, typography.heading_1, typography.body_strong, typography.body, typography.amount (tabular!), typography.caption, spacing.3, spacing.4, size.row_min, color.border.focus"
+      },
+      {
+        "screen_id": "balance-dashboard-loading",
+        "title": "Loading skeleton",
+        "viewport": "375 × 812",
+        "loading_state": "3 skeleton rows; aria-busy on list; subtitle replaced by skeleton bar",
+        "error_state": "If load > 800ms, KEEP skeleton (do not flicker)",
+        "banking_notes": "NO shimmer in v1 (OPEN-D-009); shape-matched to AccountRow (avoid CLS); aria-busy carries semantic load"
+      },
+      {
+        "screen_id": "balance-dashboard-empty",
+        "title": "Empty — zero in-scope active accounts",
+        "viewport": "375 × 812",
+        "empty_state": "Centered column, max-width 320px; illustration + heading + subtitle + disabled CTA placeholder",
+        "banking_notes": "OPEN-D-012 LOCKED — CTA is non-interactive aria-disabled span; subtitle explicitly cites OPEN-003 exclusion rule; role='status' (NOT alert); heading programmatic focus"
+      },
+      {
+        "screen_id": "balance-dashboard-stale",
+        "title": "Stale data — snapshot served + per-row stale variants",
+        "viewport": "375 × 812",
+        "loading_state": "N/A",
+        "error_state": "N/A — banner is a warning advisory not an error",
+        "banking_notes": "OPEN-D-005 LOCKED — banner driven by server meta.freshness; per-row badge driven independently by account.isStale; banner dismissible per session; non-alarming copy ('อาจไม่เป็นปัจจุบัน' not 'ผิดพลาด')"
+      },
+      {
+        "screen_id": "balance-dashboard-error",
+        "title": "Hard error — retry",
+        "viewport": "375 × 812",
+        "error_state": "Full-page error illustration + heading + body + retry button + correlationId footer",
+        "banking_notes": "Security C-2 honored — generic copy, NO PII, NO upstream service names; correlationId is OTel trace ID (no PII); 401 redirects to login; 403 IDOR routes here but copy NEVER reveals attempt; role='alert'"
+      },
+      {
+        "screen_id": "balance-dashboard-single",
+        "title": "Single account (N=1)",
+        "viewport": "375 × 812",
+        "banking_notes": "No visual rank chrome (OPEN-D-007); SR template drops 'ลำดับที่ 1 จาก 1' prefix; subtitle says '1 บัญชี' not '1 of 1'; OPEN-D-007 + LO-FI commitment"
+      },
+      {
+        "screen_id": "balance-dashboard-dense",
+        "title": "10-account density",
+        "viewport": "375 × 812",
+        "loading_state": "Same skeleton (3 rows) — does NOT match dense count (no PII timing leak)",
+        "banking_notes": "No virtualization in v1 (N≤10 safe); Angular @for track accountId; AC-005-H1 verified no horizontal scroll; AC-005-E1 verified 200% font reflow"
+      }
+    ],
+    "handoff_notes": {
+      "tech_lead": "DESIGN PAYLOAD READY for OpenAPI + ADR phase. (1) Token source of truth: docs/design/_shared/tokens.json (W3C spec); component+screen specs reference tokens BY NAME ONLY — no inline hex. (2) Resolved OPEN-D-001..005 — see metadata.resolved_open_decisions. (3) API contract requirement: response must carry meta.freshness ('live'|'snapshot'|'stale') per SA event-flows §3.1 — this drives <balance-staleness-banner>. account.isStale (per BR-013) drives per-row badge independently. (4) Security C-2 honored at UI layer — confirm OpenAPI 5xx/4xx error response shape does NOT echo balance values or unmasked account numbers in error bodies. (5) Server-side rank field (ADR-004) is consumed for SR aria-label 'Account N of M' at first render. (6) Component i18n keys locked — see screen-specs §8 (32 keys total in balance-comparison.* namespace + reused account.* namespace from money-transfer). (7) AccountView TS type aligns with SA event-flows §2.1 cached payload shape — TL to confirm field-name parity (rank, accountId, maskedAccountNumber, accountType, balance, currency, balanceAsOf, isStale).",
+      "frontend_dev": "FE IMPLEMENTATION PLAYBOOK: (1) Token generation contract — dual-emit SCSS ($-variables) + CSS custom-properties (:root --var) from docs/design/_shared/tokens.json. Style Dictionary recommended. See _shared/README.md for the complete generation rules including alias resolution and reduced-motion media query. (2) Font import — Inter (rsms.me) primary, Sarabun (Google Fonts) Thai fallback, system stack as final fallback; preconnect + preload weights actually used. (3) Component anatomy — 14 Angular standalone components per component-specs.md; ALL reference tokens by var(--token-path) at consumption; NEVER inline hex. (4) <balance-amount> is CRITICAL — wrap in stable Angular pipe 'balanceAmount' using Intl.NumberFormat('th-TH', {style:'currency',currency:'THB'}); aria-label uses full spoken form '128,540 บาท 25 สตางค์' (NEVER digit-by-digit) per AC-005-E2. (5) Tabular-nums via font-feature-settings: 'tnum' 1, 'lnum' 1 (or font-variant-numeric: tabular-nums) on .balance-amount class — non-negotiable. (6) Reduced-motion via @media (prefers-reduced-motion: reduce) in tokens.css swapping --motion-duration-* to 0ms. (7) i18n keys in balance-comparison.* namespace (32 keys total — see screen-specs §8); reuse account.* keys from money-transfer if present. (8) <balance-masked-account-label> is the ONLY component permitted to render account-number-like content; assert ^\\*+\\d{4}$ in dev mode. (9) Heroicons outline v2.x (MIT) — SAVINGS=banknotes, CURRENT=credit-card, FIXED_DEPOSIT=lock-closed (OPEN-D-002 locked). (10) Mobile-first 375px ONLY in v1; do NOT add tablet/desktop layouts (OPEN-D-013).",
+      "qa": "QA P2 CHECKLIST — see accessibility-final.md §10. Key items: Lighthouse mobile a11y ≥ 90 on demo staging URL (AC-005-H4); VoiceOver iOS + TalkBack Android announce per template §3.1; balance spoken as '128,540 บาท 25 สตางค์' NOT digit-by-digit (AC-005-E2); focus order matches §2 per screen; 200% font scale no clipping (AC-005-E1); reduced-motion suppresses fade/slide; pull-to-refresh + explicit button both work; tooltip Esc-dismissable.",
+      "security": "C-2 honored at UI layer — confirmed error/empty/loading copy contains NO balance values, NO unmasked account numbers, NO upstream service names. C-3 (JWT sub source-of-truth) is a backend concern; UI never receives customerId in any DOM/data attribute. 401 redirects to login (auth interceptor); 403 routes to generic ErrorState (never reveals cross-customer attempt). Masked account format ^\\*+\\d{4}$ enforced by <balance-masked-account-label> primitive."
+    },
+    "accessibility_checklist": [
+      "Color contrast ≥ 4.5:1 documented for ALL text pairs used (18 pairs total — see accessibility-final.md §1); AAA achieved on primary text (17.85:1), warning/danger states (8.05:1, 8.13:1), primary buttons (10.36:1)",
+      "Focus ring visible on every interactive element: 3px solid color.border.focus + 2px offset; ratio 10.36:1 on white, 9.96:1 on page bg, 9.92:1 on warning tint — all PASS WCAG 1.4.11",
+      "Focus order matches DOM order matches visual rank order (per accessibility-final.md §2) for all 7 screens",
+      "Touch targets ≥ 44×44 dp (size.tap_min); AccountRow ≥ 72×375 px (size.row_min); inter-target spacing ≥ 8px (spacing.2)",
+      "Reduced-motion contract — every transition/animation references var(--motion-duration-*); @media (prefers-reduced-motion: reduce) globally swaps to 0ms; skeleton no shimmer; pull-spring suppressed; badge/banner instant",
+      "Screen-reader composed aria-label on every AccountRow per template 'บัญชีลำดับที่ {rank} จาก {total}, {type}, ลงท้ายด้วย {last4}, ยอดเงิน {balanceSpoken} บาท, อัปเดตเมื่อ {relativeTime}{, อาจไม่ใช่ยอดล่าสุด}' (AC-005-H2)",
+      "Balance figure aria-label uses full spoken form (NEVER digit-by-digit) per AC-005-E2 — '128,540 บาท 25 สตางค์'",
+      "StalenessBanner role='status' + aria-live='polite' — announces once on appearance, no focus interrupt",
+      "ErrorState role='alert' + aria-live='assertive' — interrupts politely; heading receives programmatic focus",
+      "EmptyState role='status' (NOT alert — informational); heading programmatic focus on transition",
+      "Decorative icons aria-hidden='true' (account-type-icon, ฿ symbol, illustrations carry alt instead)",
+      "Color-independence — every state uses icon + Thai text + color (3 channels); rank uses DOM position + SR announcement (NOT color)",
+      "375px no horizontal scroll verified at all 7 screens (AC-005-H1)",
+      "200% font scale reflow verified (AC-005-E1) — rows stack vertically when needed, nothing clipped",
+      "<html lang='th'> with i18n locale swap; 32 i18n keys in balance-comparison.* + reused account.* (locked per screen-specs §8)",
+      "One <h1> per route (PageHeader title); H2 for screen-level headings (empty, error); heading hierarchy preserved",
+      "Lighthouse mobile a11y ≥ 90 target — all inputs satisfied by HI-FI design (final score depends on FE implementation fidelity; verified in QA P2)",
+      "Disabled text (color.text.disabled at 2.86:1) intentionally below AA — used ONLY on non-actionable empty-state placeholder CTA; carries aria-disabled='true' for assistive tech (exempt per WCAG 1.4.3 informative content)",
+      "Tooltip dismissable with Esc; persistent while focused (LastUpdated absolute timestamp)",
+      "Pull-to-refresh gesture has keyboard-accessible mirror (explicit refresh button in PageHeader) — OPEN-D-008"
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T14:00:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "designer-001-balance-comparison-phase1-lofi",
+    "notes": "Designer Phase 2 HI-FI complete. Authors FIRST design foundation for the entire banking project — token source of truth at docs/design/_shared/tokens.json (W3C Design Tokens Community Group format); rationale + WCAG evidence at tokens-rationale.md; FE-dev playbook at _shared/README.md. Feature-specific HI-FI for balance-comparison at docs/design/balance-comparison/hifi/ (component-specs, screen-specs, accessibility-final). 14 Angular component specs; 7 screen specs (default, loading, empty, stale, error, single, dense). All 5 OPEN-D items resolved (001-005). Security C-2 honored at UI layer (no raw balance in error/loading/empty copy). All 4 mandatory token groups present in handoff payload schema (colors, typography, spacing, border_radius) PLUS extended groups (motion, elevation, breakpoint, size, z-index, border_width, font_family, font_weight) in tokens.json source. 18 contrast pairs documented with WCAG AA evidence (10 AAA, 5 AA, 3 intentional exemptions with aria fallback). Mobile-first 375px ONLY (v1); tablet/desktop deferred (OPEN-D-013). Light-only color mode (v1); structure dark-mode-ready via surface.* and text.* aliases.",
+    "quality_gate_self_check": {
+      "all_4_mandatory_token_groups_present": true,
+      "token_groups_present_in_handoff": ["colors", "typography", "spacing", "border_radius"],
+      "extended_token_groups_in_source": ["motion", "elevation", "breakpoint", "size", "z_index", "border_width", "font_family", "font_weight"],
+      "every_color_pair_has_wcag_aa_evidence": true,
+      "contrast_pairs_documented": 18,
+      "contrast_pairs_aa_passing": 15,
+      "contrast_pairs_aaa_passing": 10,
+      "contrast_pairs_intentional_exemptions_with_aria_fallback": 3,
+      "all_open_d_items_resolved": true,
+      "component_specs_reference_tokens_by_name_only_no_inline_hex": true,
+      "security_c2_honored_no_raw_balance_in_error_or_log_copy": true,
+      "component_specs_count": 14,
+      "screen_specs_count": 7,
+      "i18n_keys_locked_count": 32,
+      "all_user_stories_have_screen_coverage": true,
+      "user_story_to_screen_map": {
+        "US-BC-001": ["balance-dashboard-default", "balance-dashboard-empty", "balance-dashboard-error", "balance-dashboard-single", "balance-dashboard-dense"],
+        "US-BC-002": ["balance-dashboard-default", "balance-dashboard-stale"],
+        "US-BC-003": ["balance-dashboard-loading", "balance-dashboard-stale", "balance-dashboard-error"],
+        "US-BC-005": ["all 7 screens"]
+      },
+      "thai_primary_english_fallback_for_all_visible_strings": true,
+      "wcag_2_1_aa_target_satisfied_at_design_layer": true,
+      "lighthouse_mobile_a11y_90_target_design_inputs_satisfied": true
+    },
+    "resolved_open_decisions": [
+      "OPEN-D-001 = Design token system authored FROM SCRATCH at docs/design/_shared/tokens.json (W3C Design Tokens Community Group format); full color scales (primary 50-900, neutral 0-900), 4 semantic families (success/danger/warning/info with on_base/on_tint), 9 typography composites including amount with tabular-nums, 9-step spacing scale (8px base), 6 border-radius tokens (named + scale), motion/elevation/breakpoint/size/z-index groups",
+      "OPEN-D-002 = Heroicons outline v2.x (MIT license) LOCKED; SAVINGS=banknotes, CURRENT=credit-card, FIXED_DEPOSIT=lock-closed; all icons aria-hidden='true' (visible Thai label carries semantic meaning per BR-008)",
+      "OPEN-D-003 = i18n micro-copy LOCKED — 32 keys in balance-comparison.* namespace + 4 reused account.* keys; Thai primary + English fallback per key; full map in screen-specs.md §8 covering page/list/lastUpdated/stale/empty/error/refresh",
+      "OPEN-D-004 = Relative-time thresholds LOCKED: <30s='อัปเดตล่าสุด' / 30s-60s='X วินาทีที่แล้ว' / 1m-59m='X นาทีที่แล้ว' / 1h-23h='X ชั่วโมงที่แล้ว' / 1d-6d='X วันที่แล้ว' / ≥7d=absolute 'DD MMM YYYY HH:mm น.' / null='ไม่ทราบเวลาอัปเดต'; 60s staleness threshold INDEPENDENT of these labels",
+      "OPEN-D-005 = Server meta.freshness signal LOCKED — JSON payload field meta.freshness: 'live' | 'snapshot' | 'stale' per SA event-flows §3.1; drives <balance-staleness-banner> global visibility; per-row account.isStale drives <balance-staleness-badge> independently"
+    ],
+    "additionally_locked_decisions": [
+      "OPEN-D-006 = NO tie-break visualization (invisible deterministic order; matches BA's AC-001-H2 customer-invisible contract)",
+      "OPEN-D-007 = NO visible rank badge (DOM position + SR 'Account N of M' carry rank; matches BA's 'compare at a glance' goal without competing with balance)",
+      "OPEN-D-008 = SHIP BOTH pull-to-refresh AND explicit refresh button (accessibility — pull is touch-only, button is keyboard-reachable)",
+      "OPEN-D-009 = Reduced-motion behavior: skeleton no shimmer (always static); pull-spring suppressed; badge instant; banner instant; spinner static-or-text 'กำลังโหลด…'",
+      "OPEN-D-010 = ALWAYS show currency code (forward-compat for multi-currency US-BC-004 v1.1)",
+      "OPEN-D-011 = Header subtitle reflects FRESHEST row balanceAsOf (never stalest — header should never be more pessimistic than rows)",
+      "OPEN-D-012 = Empty-state CTA is non-interactive <span aria-disabled='true'> placeholder (v1 — no real open-account flow; not <button disabled> which can confuse SR focus)",
+      "OPEN-D-013 = MOBILE-FIRST 375px ONLY in v1; tablet (768px) + desktop (1280px) tokens defined for v1.1 forward-compat"
+    ],
+    "applied_security_conditions": [
+      "C-2 — Audit event payload metadata-only (UI: error/loading/empty/skeleton copy contains NO balance values, NO masked or full account numbers, NO upstream service names like Redis/AccountClient/503)",
+      "C-3 — JWT sub source-of-truth (UI: customerId NEVER appears in DOM, data attributes, or visible content — entire UI is opaque to customerId; 403 IDOR routes to generic ErrorState that NEVER reveals cross-customer attempt — Security finding 5.3 at UI layer)"
+    ],
+    "next_agent": "banking-tech-lead",
+    "artifact_references": {
+      "tokens_source_of_truth": "docs/design/_shared/tokens.json",
+      "tokens_rationale_wcag_evidence": "docs/design/_shared/tokens-rationale.md",
+      "shared_readme_fe_playbook": "docs/design/_shared/README.md",
+      "component_specs": "docs/design/balance-comparison/hifi/component-specs.md",
+      "screen_specs": "docs/design/balance-comparison/hifi/screen-specs.md",
+      "accessibility_final": "docs/design/balance-comparison/hifi/accessibility-final.md",
+      "source_lofi_wireframes": "docs/design/balance-comparison/wireframes-lofi.md",
+      "source_lofi_a11y": "docs/design/balance-comparison/accessibility-notes.md",
+      "source_lofi_interaction": "docs/design/balance-comparison/interaction-spec-lofi.md",
+      "source_lofi_open_questions": "docs/design/balance-comparison/open-questions-for-hifi.md",
+      "source_lofi_user_journey": "docs/design/balance-comparison/user-journey.md",
+      "source_lofi_handoff": "docs/design/balance-comparison/handoff-designer-001.json",
+      "input_sa_architecture": "docs/sa/balance-comparison/architecture.md",
+      "input_sa_event_flows": "docs/sa/balance-comparison/event-flows.md",
+      "input_sa_handoff": "docs/sa/balance-comparison/handoff-sa-001.json",
+      "input_ba_user_stories": "docs/ba/balance-comparison/user-stories.md",
+      "input_ba_nfr": "docs/ba/balance-comparison/nfr.md",
+      "input_security_early_review": "docs/security/balance-comparison/early-review-consent-coverage.md"
+    }
+  }
+}
