@@ -37,6 +37,13 @@
     </properties>
 
     <dependencies>
+        <!-- ===== Shared libs ===== -->
+        <dependency>
+            <groupId>com.bank</groupId>
+            <artifactId>account-client-lib</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- ===== Web ===== -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

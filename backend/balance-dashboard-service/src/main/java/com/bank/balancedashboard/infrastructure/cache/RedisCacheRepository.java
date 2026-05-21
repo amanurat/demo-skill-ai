@@ -79,8 +79,9 @@ public class RedisCacheRepository implements CachePort {
             CachedBalanceDashboard cached = objectMapper.readValue(json, CachedBalanceDashboard.class);
             RankedDashboard dashboard = toDomain(cached);
             return Optional.of(dashboard);
-        } catch (RuntimeException e) {
-            // Redis fail-open (AC-003-E1, BR-015)
+        } catch (Exception e) {
+            // Redis fail-open: covers both RuntimeException (connection failure) and
+            // JsonProcessingException (checked — deserialization error). AC-003-E1, BR-015.
             log.warn("cache.get.failed key={} — failing open to AccountClient", LogMasking.maskKey(key), e);
             meterRegistry.counter("cache_miss_reason_total", "reason", "REDIS_UNAVAILABLE")
                     .increment();
@@ -107,8 +108,9 @@ public class RedisCacheRepository implements CachePort {
 
             log.debug("cache.put key={} ttl={}s accountCount={}", LogMasking.maskKey(key), ttlSeconds,
                     dashboard.accountCount());
-        } catch (RuntimeException e) {
-            // Cache write failure — swallow (user still gets fresh response)
+        } catch (Exception e) {
+            // Cache write failure — swallow: covers RuntimeException (Redis down) and
+            // JsonProcessingException (checked — serialization error). User still gets fresh response.
             log.warn("cache.put.failed key={} — swallowing, user gets fresh response", LogMasking.maskKey(key), e);
             meterRegistry.counter("cache_miss_reason_total", "reason", "REDIS_WRITE_FAILED")
                     .increment();

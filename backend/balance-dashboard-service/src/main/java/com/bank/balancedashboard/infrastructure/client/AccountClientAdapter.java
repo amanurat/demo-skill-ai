@@ -12,8 +12,6 @@ import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.core.functions.CheckedSupplier;
-import io.github.resilience4j.decorators.Decorators;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.timelimiter.TimeLimiter;
 import org.slf4j.Logger;
@@ -24,8 +22,11 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -95,14 +96,22 @@ public class AccountClientAdapter implements AccountPort {
     public List<AccountView> fetchAccounts(UUID customerId) {
         try {
             // MANDATORY operator order: TimeLimiter(outer) → CB → Retry → Bulkhead(inner)
-            // In Decorators: register innermost first, outermost last.
-            List<AccountInfo> rawAccounts = Decorators
-                    .ofSupplier(() -> accountClientLib.listAccountsByCustomer(customerId))
-                    .withBulkhead(bulkhead)
-                    .withRetry(retry)
-                    .withCircuitBreaker(circuitBreaker)
-                    .withTimeLimiter(timeLimiter, scheduler)
-                    .get();
+            // Composed manually (resilience4j-all / Decorators not available in local cache).
+            // Stack from innermost (Bulkhead) to outermost (TimeLimiter):
+            Callable<List<AccountInfo>> bulkheadWrapped =
+                    Bulkhead.decorateCallable(bulkhead,
+                            () -> accountClientLib.listAccountsByCustomer(customerId));
+
+            Callable<List<AccountInfo>> retryWrapped =
+                    Retry.decorateCallable(retry, bulkheadWrapped);
+
+            Callable<List<AccountInfo>> cbWrapped =
+                    CircuitBreaker.decorateCallable(circuitBreaker, retryWrapped);
+
+            Supplier<Future<List<AccountInfo>>> futureSupplier =
+                    () -> scheduler.submit(cbWrapped);
+
+            List<AccountInfo> rawAccounts = timeLimiter.executeFutureSupplier(futureSupplier);
 
             return mapAndFilter(rawAccounts);
 

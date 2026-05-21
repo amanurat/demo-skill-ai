@@ -7,7 +7,7 @@
 <span
   class="stale-badge"
   [title]="absoluteFormatted"
-  aria-label="ยอดอาจไม่ใช่ล่าสุด อัปเดตล่าสุดเมื่อ {{ absoluteFormatted }}"
+  [attr.aria-label]="'ยอดอาจไม่ใช่ล่าสุด อัปเดตล่าสุดเมื่อ ' + absoluteFormatted"
   data-testid="stale-badge-pill"
 >
   <!-- Heroicons outline: exclamation-triangle -->

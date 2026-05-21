@@ -1,0 +1,117 @@
+version: "3.9"
+
+# =============================================================================
+# balance-dashboard-service — Local Development Stack
+#
+# Services: Redis · Kafka (KRaft, no Zookeeper) · balance-dashboard-service
+#
+# Usage:
+#   docker compose up -d infra          ← start Redis + Kafka only (run BE from IDE)
+#   docker compose up -d                ← start everything including the app
+#   docker compose down                 ← stop all
+#   docker compose logs -f balance-dashboard-service
+# =============================================================================
+
+networks:
+  banking-local:
+    driver: bridge
+
+volumes:
+  redis-data:
+  kafka-data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Redis 7 — balance cache (TTL-only, no explicit invalidation)
+  # SSL disabled in local dev (ASSUMPTION-TL-004 applies to staging/prod only)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: balance-redis
+    restart: unless-stopped
+    networks:
+      - banking-local
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Kafka (KRaft mode — no Zookeeper needed)
+  # Used for audit event publishing (balance-inquiry-audit topic)
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: balance-kafka
+    restart: unless-stopped
+    networks:
+      - banking-local
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    environment:
+      # KRaft mode — no Zookeeper
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_NUM_PARTITIONS: 1
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # balance-dashboard-service — Spring Boot app
+  # Requires: redis + kafka healthy first
+  # Feature flag ON for local dev
+  # ---------------------------------------------------------------------------
+  balance-dashboard-service:
+    build:
+      context: .
+      dockerfile: backend/balance-dashboard-service/Dockerfile
+    image: bank/balance-dashboard-service:local
+    container_name: balance-dashboard-service
+    restart: unless-stopped
+    networks:
+      - banking-local
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      # Feature flag — ON for local dev
+      BALANCE_DASHBOARD_ENABLED: "true"
+      # Redis (no TLS in local dev)
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_SSL_ENABLED: "false"
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # JWT — local dev accepts any RS256 token from local issuer
+      # Override with your local OIDC server or use the mock profile
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:9000
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://localhost:9000/oauth2/jwks
+      # Apicurio — skip schema validation in local dev
+      APICURIO_REGISTRY_URL: ""
+      # Resilience4j — relaxed timeouts for local
+      RESILIENCE4J_TIMELIMITER_INSTANCES_ACCOUNT-CLIENT_TIMEOUT-DURATION: 5s

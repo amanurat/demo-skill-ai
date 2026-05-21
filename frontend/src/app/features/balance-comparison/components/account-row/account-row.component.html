@@ -70,7 +70,7 @@
         [attr.aria-label]="balanceResult.ariaLabel"
         data-testid="balance-amount"
       >
-        {{/* R-FE-006: formatting comes entirely from BalanceAmountPipe (no template .replace() chains) */}}
+        <!-- R-FE-006: formatting comes entirely from BalanceAmountPipe (no template .replace() chains) -->
         <span aria-hidden="true">฿</span>{{ balanceResult.amountOnly }}
       </span>
       <span
