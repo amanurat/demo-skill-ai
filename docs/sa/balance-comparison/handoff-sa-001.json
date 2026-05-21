@@ -1,0 +1,302 @@
+{
+  "artifact_id": "f2b9c1a7-3e4d-4a6b-8f12-5d7e9c4b2a18",
+  "from_agent": "banking-solution-architect",
+  "to_agent": "banking-tech-lead",
+  "phase": "PLANNING",
+  "feature": "balance-comparison",
+  "payload": {
+    "services": [
+      {
+        "name": "balance-dashboard-service",
+        "responsibility": "Read-only aggregator for the Account Balance Comparison Dashboard. Aggregates one customer's eligible accounts (ACTIVE + SAVINGS/CURRENT/FIXED_DEPOSIT), ranks by balance DESC with accountId ASC tie-break (server-side, deterministic per ADR-004), caches the ranked result in Redis with 30s TTL, and emits one async audit event per request (cache hit or miss). No RDBMS state. No write operations. Defense-in-depth IDOR guard. Hexagonal layout: domain (Ranker, EligibilityPolicy, BalanceSnapshot, AccountView) + application (BalanceDashboardService use case) + infrastructure (AccountClientAdapter, BalanceCacheRepository, AuditEventPublisher).",
+        "bounded_context": "Accounts (read-side / CQRS read projection)",
+        "owns_data": [],
+        "owns_redis_namespace": "balance-dashboard:*",
+        "consumes_events": [],
+        "produces_events": ["AuditEventRecorded_v2 (BALANCE_INQUIRY)"],
+        "endpoint": "GET /api/v1/balance-dashboard (TL authors OpenAPI)",
+        "scope_required": "accounts:read",
+        "min_replicas": 2,
+        "feature_flag": "balance-dashboard.enabled (default false in non-staging)",
+        "is_new": true
+      },
+      {
+        "name": "account-service",
+        "responsibility": "Existing — REUSED. Must add new batched endpoint GET /api/v1/accounts?customerId={uuid} returning List<AccountInfo> (all statuses, all types) — see SUBDEC-002 resolution in service-decomposition §4. balance-dashboard-service applies EligibilityPolicy locally.",
+        "bounded_context": "Accounts",
+        "is_new": false,
+        "is_extended": true,
+        "extension": "New endpoint: listAccountsByCustomer(customerId): List<AccountInfo>. Server-side filtering by status/type is the CALLER's responsibility."
+      },
+      {
+        "name": "audit-service",
+        "responsibility": "Existing — REUSED with schema-only extension (no code change). Consumes AuditEventRecorded v2 (additive Avro fields per ADR-003). Inherits 7-year retention and append-only enforcement from money-transfer S3 ADR-012.",
+        "bounded_context": "Compliance",
+        "is_new": false,
+        "is_extended": true,
+        "extension": "AuditEventRecorded schema v1 → v2 (BACKWARD-compatible): 3 optional fields added with null defaults — purpose (string), cacheHit (boolean), accountCount (int). Code change required: NONE in consumer. DB change recommended: add 3 columns to audit_log (DevOps owns); fallback path is JSONB storage in existing payload column."
+      },
+      {
+        "name": "api-gateway",
+        "responsibility": "Existing — REUSED. New route /api/v1/balance-dashboard/** → balance-dashboard-service (DevOps P2 config change only). JWT RS256 validation + X-Customer-Id injection from JWT.sub (existing pattern) is the first IDOR checkpoint.",
+        "bounded_context": "Edge",
+        "is_new": false,
+        "is_extended": true,
+        "extension": "Route configuration only — no code change"
+      },
+      {
+        "name": "identity-service",
+        "responsibility": "Existing — REUSED unchanged. JWKS endpoint provides public key for RS256 JWT verification at api-gateway. Token issuance unchanged.",
+        "bounded_context": "IAM",
+        "is_new": false
+      }
+    ],
+    "events": [
+      {
+        "name": "AuditEventRecorded",
+        "version": "v2",
+        "producer": "balance-dashboard-service (NEW producer); transfer-service continues to emit v1 (backward-compatible coexistence)",
+        "consumers": ["audit-service"],
+        "topic": "audit.event-recorded",
+        "schema_ref": "apicurio://audit.event-recorded/version/2",
+        "schema_compatibility": "BACKWARD",
+        "delivery": "at-least-once",
+        "send_mode": "async fire-and-forget (producer.send() without .get())",
+        "producer_acks": "acks=1, enable.idempotence=true",
+        "new_fields": [
+          { "name": "purpose", "type": "union[null,string]", "default": "null", "example": "balance-inquiry" },
+          { "name": "cacheHit", "type": "union[null,boolean]", "default": "null", "example": "true|false" },
+          { "name": "accountCount", "type": "union[null,int]", "default": "null", "example": "0..N" }
+        ],
+        "outbox_required": false,
+        "outbox_justification": "balance-dashboard-service has no RDBMS state for outbox to commit against (per ADR-001). Read-only audit emission. Accept at-most-one-event-loss-per-Kafka-outage in v1; revisit if compliance requires zero-loss.",
+        "rationale_ref": "ADR-003"
+      }
+    ],
+    "decisions": [
+      {
+        "id": "ADR-001",
+        "title": "Service boundary — new balance-dashboard-service vs. endpoint on account-service",
+        "decision": "NEW balance-dashboard-service in the Accounts bounded context (CQRS-style read projection)",
+        "rationale": "Clean SRP, independent deploy + rollback, isolated cache namespace, no blast-radius increase on account-service (which is on the critical path of money transfers). Reuse-first preserved: AccountClient + AccountInfo + auth filter + audit-lib + observability-lib + Resilience4j all reused. Extra scaffolding cost ~0.75 day vs Option A is worth the deploy isolation for demo day.",
+        "resolves_subdec": "SUBDEC-004",
+        "rejected_options": [
+          "Endpoint on account-service — pollutes a critical-path service with feature-specific cache + Kafka producer; couples demo rollback; mixes responsibilities",
+          "Library auto-mounted into account-service — worst of both worlds; couples runtime without isolation benefit"
+        ],
+        "path": "docs/sa/balance-comparison/adrs/ADR-001-service-boundary.md"
+      },
+      {
+        "id": "ADR-002",
+        "title": "Cache strategy — TTL-only for v1 vs event-driven invalidation",
+        "decision": "TTL-only, 30 seconds, no active invalidation in v1. Event-driven invalidation deferred to v1.1 with documented re-open criteria.",
+        "rationale": "Acceptable staleness ≤30s is appropriate for an informational read view (BR-013 staleness threshold 60s is the bigger UX signal). Event-driven invalidation needs customerId-from-accountId resolution which would require AccountDebited/AccountCredited Avro schema extension (cross-team coordination) or a new mapping table in BDS (contradicts ADR-001's no-RDBMS). Sweet spot 30s for hit ratio > 70% target.",
+        "resolves_subdec": null,
+        "rejected_options": [
+          "Event-driven invalidation v1 — needs cross-service schema change + customerId resolution; +2 SP; schedule risk",
+          "5s TTL — kills cache hit ratio; constant cold-cache load",
+          "5min TTL — staleness UX problems"
+        ],
+        "path": "docs/sa/balance-comparison/adrs/ADR-002-cache-strategy.md"
+      },
+      {
+        "id": "ADR-003",
+        "title": "Audit event schema evolution — extend AuditEventRecorded v1→v2 vs new event type",
+        "decision": "EXTEND AuditEventRecorded with 3 optional fields (purpose, cacheHit, accountCount) — BACKWARD-compatible Avro change. No audit-service code change required. Sequencing: DevOps registers v2 schema in Apicurio by D6 before BDS deploys.",
+        "rationale": "Zero audit-service code change. Preserves single audit taxonomy across services (vs fragmenting into BalanceInquiryAudited / LoanInquiryAudited / ... in future). First-class fields (vs stuffing into existing payload map) enable cheap compliance queries over 7-year retention.",
+        "resolves_subdec": "SUBDEC-003 / DEP-003",
+        "rejected_options": [
+          "New BalanceInquiryAudited event type — requires audit-service code change; taxonomy fragmentation; topic proliferation",
+          "Stuff fields into existing payload map — loses type safety; bad compliance query ergonomics"
+        ],
+        "path": "docs/sa/balance-comparison/adrs/ADR-003-audit-event-evolution.md"
+      },
+      {
+        "id": "ADR-004",
+        "title": "Aggregation & ranking responsibility — server-side vs client-side",
+        "decision": "Server-side ranking in balance-dashboard-service. Cache stores the pre-ranked, pre-filtered result. Response includes per-row rank field. FE does NOT re-sort.",
+        "rationale": "Cache friendliness (warm hits skip rank computation), deterministic across clients (one Ranker comparator), ARIA aria-label='Account {rank} of {total}' is server-authoritative at first render (accessibility), single source of truth for accountCount in audit event.",
+        "resolves_subdec": null,
+        "rejected_options": [
+          "Client-side sort — cache pollution, FE sort race risk for ARIA, breaks AC-001-H2 deterministic ordering contract",
+          "Hybrid (server stable sort + client balance sort) — worst of both"
+        ],
+        "path": "docs/sa/balance-comparison/adrs/ADR-004-server-side-ranking.md"
+      }
+    ],
+    "sub_decisions_resolved": {
+      "SUBDEC-001": {
+        "question": "FIXED_DEPOSIT balance = principal + accrued interest?",
+        "resolution": "CONFIRM BA default: principal + accrued interest as of balance_as_of. balance-dashboard-service is a thin pass-through aggregator and trusts AccountInfo.balance from account-service/ledger-service. If ledger returns principal-only, that becomes a ledger-service ADR — not the BDS scope. Tech Lead MUST verify AccountInfo.balance semantics for accountType=FIXED_DEPOSIT during OpenAPI authoring; if principal-only, escalate to PM/BA per SUBDEC-001 fallback rule.",
+        "owner_next": "banking-tech-lead",
+        "reference": "ADR-001 §Consequences for SUBDEC-001"
+      },
+      "SUBDEC-002": {
+        "question": "AccountClient.listAccountsByCustomer() single batched call exists?",
+        "resolution": "DOES NOT EXIST. Money-transfer's AccountClient only exposes getAccountInfo(accountId) per docs/artifacts/S5-backend-dev-money-transfer.json. Tech Lead MUST add: (a) new interface method listAccountsByCustomer(customerId): List<AccountInfo> to common-libs/account-client-lib, (b) matching GET /api/v1/accounts?customerId={uuid} endpoint on account-service (returns ALL accounts, all statuses, all types — caller applies eligibility filter). Resilience4j defaults specified: time-limiter 300ms, retry 2x exp on 5xx/IOException only, CB 50% / 100 calls / 30s open, bulkhead 20 concurrent.",
+        "owner_next": "banking-tech-lead",
+        "reference": "service-decomposition.md §4"
+      },
+      "SUBDEC-003": {
+        "question": "Existing audit-service event schema supports purpose + cacheHit?",
+        "resolution": "EXTEND, don't fork. AuditEventRecorded v1 → v2 with 3 optional fields (purpose, cacheHit, accountCount), BACKWARD-compatible Avro evolution. audit-service consumer code change: NONE. DB extension recommended (3 columns in audit_log) but JSONB fallback acceptable for demo. Sequencing: DevOps registers v2 in Apicurio by D6 before BDS deploys.",
+        "owner_next": "banking-devops (Apicurio registration) + audit-service owner (storage path decision by D5)",
+        "reference": "ADR-003"
+      },
+      "SUBDEC-004": {
+        "question": "Service boundary — new balance-dashboard-service or extend account-service?",
+        "resolution": "NEW balance-dashboard-service. Detailed trade-off analysis in ADR-001. Chosen for deploy isolation, clean cache namespace, SRP, no blast-radius increase on account-service. Extra ~0.75 day vs Option A pays back in operational separation for demo day.",
+        "owner_next": "banking-tech-lead (scaffolds Maven module + Helm chart)",
+        "reference": "ADR-001"
+      }
+    },
+    "nfr_traceability": {
+      "performance_p95_lt_500ms_warm": "Redis GET serves pre-ranked JSON; no upstream calls; audit publish off critical path (async fire-and-forget). Headroom ~420ms under 500ms. Ref: ADR-002, ADR-004, event-flows §4.",
+      "performance_p95_lt_800ms_cold": "Single batched AccountClient call (SUBDEC-002), Resilience4j time-limiter 300ms; filter+rank ~5ms; cache-set + audit-publish parallel/non-blocking. Estimated ~390ms total. Ref: event-flows §5.",
+      "performance_audit_emit_overhead_lt_200ms": "Kafka producer.send() fire-and-forget on IO thread; main response thread not blocked. acks=1 + idempotent producer. No outbox per event-flows §3.4. Ref: event-flows §3.3.",
+      "performance_accountclient_single_batched_call": "TL adds listAccountsByCustomer endpoint per service-decomposition §4. BDS calls once, applies EligibilityPolicy locally.",
+      "performance_redis_cache_ttl_30s": "SETEX with 30s TTL; cache-aside pattern. No active invalidation in v1. Ref: ADR-002.",
+      "availability_99_9_pct_bds": "Min 2 replicas across 2 AZs; rolling deploys maxUnavailable=0; HPA on CPU 70%. Ref: service-decomposition §7.",
+      "availability_redis_fail_open": "Catch Lettuce RedisException → log + metric cache_miss_reason=REDIS_UNAVAILABLE → fall through to AccountClient. No CB on Redis (fail-fast retries). Ref: event-flows §6.",
+      "resilience_circuit_breaker_accountclient": "Resilience4j slidingWindow=100, failureRate=50%, open=30s. Aligns with money-transfer ADR-009.",
+      "resilience_retry_accountclient": "Max 2 attempts, exp backoff (100ms, 200ms), retry on 5xx/IOException only. Idempotent GET safe to retry.",
+      "resilience_graceful_degradation": "v1: isStale=true per row when now()-balanceAsOf>60s. v1.1 (deferred): last-known-good cache served with X-Cache:STALE when CB-open. v1 returns 503 on CB-open (demo simplicity). Ref: event-flows §7.",
+      "security_oauth2_jwt_rs256": "Reused existing chain (api-gateway + identity-service from money-transfer). RS256 + JWKS.",
+      "security_idor_guard_defense_in_depth": "(1) api-gateway injects X-Customer-Id from JWT.sub, strips client-supplied customerId; (2) BDS controller re-asserts; mismatch → HTTP 403 + audit FORBIDDEN. Endpoint takes NO customerId parameter by construction. Ref: architecture.md §4.1, event-flows §8.",
+      "security_account_number_masking": "AccountInfo already carries masked accountNumber from account-service (money-transfer convention). Logback masking filter from observability-lib reused. Cache stores only masked. Ref: service-decomposition §2.",
+      "security_no_balance_in_logs": "Logback JSON encoder excludes balance field; structured log fields: correlationId, customerId, cacheHit, accountCount, durationMs, result.",
+      "security_redis_encryption_at_rest": "Cluster-default AES-256-GCM (consistent with money-transfer Redis usage).",
+      "security_feature_flag_disabled_in_non_staging": "@ConditionalOnProperty on controller bean; application-prod.yml sets balance-dashboard.enabled=false.",
+      "security_jwt_scope_accounts_read": "@PreAuthorize hasAuthority SCOPE_accounts:read on controller. TL to confirm scope name (ASSUME-001).",
+      "compliance_pdpa_data_minimization": "Response DTO carries only 8 fields (rank, accountId, maskedAccountNumber, accountType, balance, currency, balanceAsOf, isStale). No name/address/contact/openingDate.",
+      "compliance_pdpa_purpose_limitation": "Every audit event carries purpose=balance-inquiry (new field per ADR-003).",
+      "compliance_pdpa_consent_reuse": "banking-security performs early consent-coverage review at D2-D3 (RISK-003 mitigation).",
+      "compliance_bot_audit_on_every_retrieval": "AuditEventPublisher.publish() called in BalanceDashboardService.loadDashboard() after every success AND on FORBIDDEN/ERROR. Cache layer NEVER short-circuits audit. Ref: event-flows §3.2.",
+      "compliance_bot_7yr_retention": "Inherited from audit-service (money-transfer S3 ADR-012). v2 schema fields stored alongside v1.",
+      "compliance_bot_audit_for_excluded_accounts": "balance_dashboard_excluded_accounts_total{reason} counter per excluded account; observable in Grafana for compliance audit.",
+      "accessibility_wcag_aa_lighthouse_90": "FE concern — server contract supports it: per-row rank field (server-side ranking, ADR-004) enables FE to emit correct aria-label='Account {rank} of {total}' at first render.",
+      "observability_distributed_tracing": "OTel SDK from observability-lib reused; traceparent propagated via HTTP + Kafka headers; spans cover gateway, controller, cache get/set, account-client, audit publish.",
+      "observability_structured_logs": "Logback JSON encoder from observability-lib reused; required fields correlationId, customerId, cacheHit, accountCount, durationMs, result. NO balance, NO full accountNumber.",
+      "observability_metrics_prometheus": "New metrics balance_dashboard_* namespace: requests_total, duration_ms, cache_hit_ratio, audit_events_total, excluded_accounts_total, cache_miss_reason_total. Ref: architecture.md §5.",
+      "observability_grafana_panel": "DevOps P2 creates new dashboard using existing OTel/Prometheus pipeline. Panels: request rate, error rate, p95 latency, cache hit ratio, audit-event rate, excluded-account counter.",
+      "observability_alerts": "AlertManager: error rate>1%/5min, p95>800ms warm-cache/5min, audit-event rate=0/2min (silent compliance failure).",
+      "scalability_50_peak_concurrent": "Min 2 replicas, HPA on CPU 70% + custom metric balance_dashboard_requests_total rate > 30/s/pod.",
+      "scalability_horizontal_stateless": "No session state, no in-memory cache; all state in Redis. HPA elastic.",
+      "scalability_accountclient_no_n_fanout": "Single batched call per SUBDEC-002 / service-decomposition §4."
+    },
+    "tech_choices": {
+      "language_runtime": "Java 21 + Spring Boot 3.x (matches money-transfer monorepo convention)",
+      "module_layout": "backend/balance-dashboard-service/ in Maven monorepo per project-structure.md",
+      "hexagonal_layers": "domain (Ranker, EligibilityPolicy, BalanceSnapshot, AccountView) + application (BalanceDashboardService) + infrastructure (AccountClientAdapter, BalanceCacheRepository, AuditEventPublisher) + interfaces/rest (BalanceDashboardController)",
+      "database": "NONE — no RDBMS, no Flyway migrations. State is Redis cache + upstream account-service.",
+      "messaging": "Apache Kafka 3.x (existing); topic audit.event-recorded; Apicurio schema registry v2 (per ADR-003)",
+      "cache": "Redis 7 (shared cluster from money-transfer ASSUME-004); key prefix balance-dashboard:*; TTL 30s; Lettuce client with pool size 16/pod",
+      "auth": "OAuth2/OIDC reused; RS256 JWT; scope accounts:read (TL to confirm name)",
+      "resilience": "Resilience4j on AccountClient: time-limiter 300ms, retry 2x exp 100/200ms on 5xx/IOException, CB slidingWindow=100 failureRate=50% open=30s, bulkhead maxConcurrent=20/pod. NO CB on Redis (fail-open).",
+      "observability": "Reused observability-lib from money-transfer: OTel SDK, Micrometer→Prometheus, Logback JSON with masking filter",
+      "shared_libraries_reused": [
+        "common-libs/account-client-lib (TL extends with listAccountsByCustomer method)",
+        "common-libs/audit-lib (Kafka publisher)",
+        "common-libs/observability-lib (OTel + Logback masking)"
+      ],
+      "deployment": "Helm chart infra/helm/balance-dashboard-service/ (DevOps P1 scaffolds); min 2 replicas across 2 AZs; HPA on CPU + request rate; NetworkPolicy ingress from api-gateway only, egress to account-service+Redis+Kafka",
+      "feature_flag": "balance-dashboard.enabled (Spring property), default false in non-staging"
+    },
+    "risks_for_tl": [
+      {
+        "id": "SA-RISK-001",
+        "headline": "SUBDEC-001 — FIXED_DEPOSIT may be principal-only from ledger",
+        "severity": "low",
+        "mitigation": "TL verifies AccountInfo.balance semantics during OpenAPI authoring; if principal-only, escalate to PM/BA per fallback rule. NOT a blocker for scaffolding.",
+        "owner": "banking-tech-lead"
+      },
+      {
+        "id": "SA-RISK-002",
+        "headline": "Apicurio v2 schema must be registered before BDS deploy (ADR-003 sequencing)",
+        "severity": "medium",
+        "mitigation": "DevOps P1 registers v2 schema by D6. Staging consumer smoke-test on D7 before BDS deploys on D8.",
+        "owner": "banking-devops + banking-tech-lead"
+      },
+      {
+        "id": "SA-RISK-003",
+        "headline": "audit-service storage path for v2 fields — first-class columns vs JSONB",
+        "severity": "low",
+        "mitigation": "DevOps + audit-service owner decide by D5. Demo can ship with JSONB fallback; column promotion can be a follow-up ADR.",
+        "owner": "banking-devops"
+      },
+      {
+        "id": "SA-RISK-004",
+        "headline": "Lettuce pool size vs shared Redis maxclients",
+        "severity": "low",
+        "mitigation": "TL verifies pool size 16/pod × 2 pods = 32 connections fits within shared cluster maxclients headroom. ASSUME-004 in PM register.",
+        "owner": "banking-tech-lead"
+      },
+      {
+        "id": "SA-RISK-005",
+        "headline": "Cold-cache p95 may be tight if account-service latency is higher than expected",
+        "severity": "medium",
+        "mitigation": "Time-limiter 300ms on AccountClient; QA P1 measures with realistic 10-account fixture by D3 (shift-left perf test). Contingency: document p95<800ms cold as v1 SLA, raise to 1000ms only if QA evidence shows it's needed (with BA sign-off).",
+        "owner": "banking-tech-lead + banking-qa"
+      }
+    ],
+    "open_items_for_tl": [
+      "Confirm Resilience4j default values (timeout 300ms, retry 2x exp, CB 50%/100, bulkhead 20) by measuring against staging account-service latency",
+      "Confirm exact JWT scope name (accounts:read or alternative) against identity-service OAuth2 client config (ASSUME-001)",
+      "Confirm AccountInfo.balance semantics for FIXED_DEPOSIT during OpenAPI authoring (SUBDEC-001)",
+      "Decide audit-service storage path (first-class columns vs JSONB) with audit-service owner by D5 (ADR-003 §audit-service Storage Side)",
+      "Author OpenAPI spec backend/balance-dashboard-service/api/openapi.yaml with endpoint shape per service-decomposition §1.3",
+      "Add listAccountsByCustomer endpoint to account-service AND extend AccountClient interface in common-libs/account-client-lib (SUBDEC-002)",
+      "NO Flyway migrations for balance-dashboard-service — confirm by NOT scaffolding db/migration/ directory"
+    ],
+    "artifact_references": {
+      "architecture": "docs/sa/balance-comparison/architecture.md",
+      "service_decomposition": "docs/sa/balance-comparison/service-decomposition.md",
+      "event_flows": "docs/sa/balance-comparison/event-flows.md",
+      "nfr_mapping": "docs/sa/balance-comparison/nfr-mapping.md",
+      "adr_001": "docs/sa/balance-comparison/adrs/ADR-001-service-boundary.md",
+      "adr_002": "docs/sa/balance-comparison/adrs/ADR-002-cache-strategy.md",
+      "adr_003": "docs/sa/balance-comparison/adrs/ADR-003-audit-event-evolution.md",
+      "adr_004": "docs/sa/balance-comparison/adrs/ADR-004-server-side-ranking.md",
+      "source_ba_handoff": "docs/ba/balance-comparison/handoff-ba-001.json",
+      "source_pm_handoff": "docs/pm/balance-comparison/handoff-pm-001.json",
+      "reuse_source_sa": "docs/artifacts/S3-solution-architect-money-transfer.json",
+      "reuse_source_be": "docs/artifacts/S5-backend-dev-money-transfer.json"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T11:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "c4e9f1b2-7a3d-4c85-b6f0-1e8d2a5c9047",
+    "parallel_next": [],
+    "notes": "SA-001 initial. 1 NEW service (balance-dashboard-service) + 2 EXTENDED services (account-service adds batched endpoint, audit-service consumes extended Avro v2). 1 event (AuditEventRecorded v2, BACKWARD-compatible additive). 4 ADRs covering: (1) service boundary [SUBDEC-004 resolved], (2) cache strategy TTL-only v1, (3) audit event schema evolution [SUBDEC-003 / DEP-003 resolved], (4) server-side ranking. SUBDEC-001 confirmed (BA default, TL to verify in OpenAPI). SUBDEC-002 RESOLVED: new method listAccountsByCustomer required on AccountClient + account-service — specified in service-decomposition §4. All 8 NFR sections from BA nfr.md mapped to mechanisms. No shared-DB violation: balance-dashboard-service owns no RDBMS, only Redis namespace balance-dashboard:*. Demo-deadline discipline: event-driven invalidation, last-known-good cache, and outbox pattern all deferred with documented re-open criteria. Hexagonal layout target package layout specified for TL.",
+    "quality_gate_self_check": {
+      "all_user_stories_traced_to_service": true,
+      "user_story_to_service_map": {
+        "US-BC-001": "balance-dashboard-service (ranking + aggregation + IDOR + audit)",
+        "US-BC-002": "balance-dashboard-service (response DTO carries balance_as_of + masked accountNumber + type)",
+        "US-BC-003": "balance-dashboard-service + Redis cache + Resilience4j on AccountClient",
+        "US-BC-005": "FE-only (server-side rank field in response supports ARIA — ADR-004)"
+      },
+      "all_nfr_sections_mapped": true,
+      "nfr_sections_covered": ["performance", "availability_resilience", "security", "compliance_pdpa_bot", "accessibility", "observability", "scalability", "data_minimization"],
+      "service_decomposition_explicit": true,
+      "adrs_written_count": 4,
+      "adrs_minimum_3_met": true,
+      "all_4_subdecs_resolved": true,
+      "subdec_resolution_summary": {
+        "SUBDEC-001": "confirmed BA default (TL verifies in OpenAPI)",
+        "SUBDEC-002": "new method required — specified",
+        "SUBDEC-003": "extend AuditEventRecorded v2 (ADR-003)",
+        "SUBDEC-004": "new balance-dashboard-service (ADR-001)"
+      },
+      "no_shared_db_anti_pattern": true,
+      "data_ownership_clear": true,
+      "rejected_options_documented_per_adr": true,
+      "event_flow_diagrammed_mermaid": true,
+      "demo_timeline_realistic": true,
+      "reuse_first_policy_honored": true
+    }
+  }
+}
