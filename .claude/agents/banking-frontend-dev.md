@@ -21,6 +21,26 @@ Handoff artifact from `banking-tech-lead`:
 - OpenAPI spec → generate typed API clients
 - `frontend_notes` for behavioral guidance (e.g., Idempotency-Key handling)
 
+## Project Scaffold Check (mandatory — run BEFORE planning or coding)
+
+ก่อนเขียน code ใดๆ ให้ตรวจสอบ Angular project shell ก่อนเสมอ:
+
+```bash
+# ตรวจว่า Angular project root files ครบ
+ls frontend/angular.json \
+   frontend/src/main.ts \
+   frontend/src/index.html \
+   frontend/src/app/app.module.ts \
+   frontend/src/app/app-routing.module.ts \
+   frontend/src/app/app.component.ts 2>/dev/null || echo "MISSING"
+```
+
+ถ้าไฟล์ใด **MISSING** → **สร้างก่อนเลย** อย่าเริ่ม implement feature จนกว่า `ng build` จะผ่าน:
+- สร้าง `angular.json`, `src/main.ts`, `src/index.html`, `app.module.ts`, `app-routing.module.ts`, `app.component.ts` ที่ minimal แต่ runnable
+- ตรวจ `package.json` ว่ามี `@angular/core`, `@angular/cli` และ dependencies ครบ
+- Run `cd frontend && ng build` → ต้อง exit 0 ก่อนเดินหน้า
+- Feature module ที่จะสร้างต้อง register ใน `app.module.ts` หรือ lazy-load ผ่าน `app-routing.module.ts` ด้วย
+
 ## Planning Step (mandatory — complete before writing any code)
 
 ก่อนเขียน code ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
@@ -42,13 +62,23 @@ Handoff artifact to `banking-reviewer`:
 {
   "service": "banking-web (frontend)",
   "feature": "money-transfer",
-  "files_changed": ["frontend/libs/feature-transfer/..."],
+  "files_changed": ["frontend/src/app/features/..."],
   "tests": { "unit_coverage": 0.82, "e2e_added": true },
   "a11y_check": "WCAG 2.1 AA pass",
   "lighthouse": { "performance": 92, "a11y": 100, "best_practices": 95 },
-  "build_status": "success"
+  "build_status": "success",
+  "build_evidence": {
+    "build_command": "ng build --configuration production",
+    "build_exit_code": 0,
+    "test_command": "ng test --watch=false --browsers=ChromeHeadless",
+    "test_exit_code": 0,
+    "summary": "42 specs, 0 failures",
+    "coverage": "statements: 83%, branches: 80%"
+  }
 }
 ```
+
+**`build_evidence` is REQUIRED.** A handoff missing this field or with any `exit_code != 0` will be rejected by banking-player.
 
 ## Internal Sequential Sub-Workflow (mandatory order)
 
@@ -82,9 +112,13 @@ Step 4: Smart (Container) Components
 
 Step 5: Routing + Guards + Integration
   → configure routes, lazy loading, auth guards
+  → register feature module in app-routing.module.ts (lazy-load) — ห้ามข้ามขั้นนี้
   → write E2E test for happy path of every user story (Cypress / Playwright)
+  → RUN (mandatory): cd frontend && ng build && ng test --watch=false
+  → exit code MUST be 0 — if non-zero: fix errors, do NOT emit handoff
   → run Validation Loop (below)
-  → emit handoff artifact
+  → capture last 30 lines of test output as build_evidence
+  → emit handoff artifact with build_evidence included
 ```
 
 > **TDD loop per step:** write failing test → implement → refactor → green.
@@ -120,14 +154,35 @@ Subagent context does not auto-load skills. Read these before starting any imple
 
 ## Validation Loop
 
-รัน loop นี้ก่อน emit handoff artifact:
+**⛔ HARD GATE — ห้าม emit handoff จนกว่าจะผ่านทุก step**
+**⛔ การ set `build_status: "success"` โดยไม่ได้ run คำสั่งจริง = INVALID handoff**
 
-1. **Build**: `ng build --configuration production` — zero errors / warnings
-2. **Lint**: `ng lint` — zero violations
-3. **Unit**: `ng test --code-coverage --watch=false` — coverage ≥ 80%
-4. **a11y**: `npx axe-cli <local-url>` หรือ `ng run <project>:a11y` — zero violations
-5. **Lighthouse**: perf ≥ 90, a11y = 100 (ถ้า run ได้ใน environment)
-6. เมื่อ pass ทุก step → emit handoff
+ถ้า step ใด fail → **fix เองก่อน** แล้วรัน loop ใหม่ตั้งแต่ step นั้น
+
+```bash
+# Step 1 — Build (MUST exit 0)
+cd frontend && ng build --configuration production
+# TypeScript error / import path ผิด / missing module → FIX FIRST
+
+# Step 2 — Lint (MUST exit 0)
+ng lint
+# zero violations
+
+# Step 3 — Unit tests + coverage (MUST exit 0)
+ng test --code-coverage --watch=false --browsers=ChromeHeadless
+# coverage ≥ 80%
+
+# Step 4 — a11y (ถ้า environment รองรับ)
+npx axe-cli http://localhost:4200 --exit
+# zero violations
+
+# Step 5 — Lighthouse (ถ้า environment รองรับ)
+# perf ≥ 90, a11y = 100
+```
+
+เมื่อ **ทุก step exit 0** จึง:
+- Set `"build_status": "success"`
+- แนบ `"build_evidence"` ใน handoff: last 30 lines ของ `ng test` output (X specs, 0 failures)
 
 ## Decision Rules
 

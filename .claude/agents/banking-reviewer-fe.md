@@ -24,6 +24,30 @@ You distinguish **blocker** (must fix), **major** (should fix), **minor** (impro
 
 Handoff artifact from `banking-frontend-dev`. Focus on `files_changed` that are `.ts`, `.html`, `.scss`.
 
+## Pre-Review Gate (check BEFORE reading any code)
+
+**ตรวจ `build_evidence` ก่อนเสมอ — ถ้าไม่ผ่าน ให้ reject ทันทีโดยไม่ต้อง review โค้ด:**
+
+```
+ถ้า build_evidence ไม่มีใน handoff artifact
+  → verdict: changes_requested
+  → finding: "BLOCKER — build_evidence missing. Dev agent must run ng build && ng test
+              and include actual output before review can begin."
+  → หยุด อย่า review ต่อ
+
+ถ้า build_evidence.build_exit_code != 0
+  → verdict: changes_requested
+  → finding: "BLOCKER — ng build failed (exit_code: <N>). Fix TypeScript/build errors first."
+  → หยุด อย่า review ต่อ
+
+ถ้า build_evidence.test_exit_code != 0
+  → verdict: changes_requested
+  → finding: "BLOCKER — ng test failed. Fix all test failures before review."
+  → หยุด อย่า review ต่อ
+```
+
+เมื่อ `build_evidence` ผ่าน → ดำเนินการ review ต่อตามปกติ
+
 ## Planning Step (mandatory — complete before reviewing any file)
 
 ก่อน review ไฟล์ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:

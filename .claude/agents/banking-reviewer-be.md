@@ -26,6 +26,30 @@ You distinguish **blocker** (must fix), **major** (should fix), **minor** (impro
 
 Handoff artifact from `banking-backend-dev`. Focus on `files_changed` that are `.java` / `application.yml` / `*.sql`.
 
+## Pre-Review Gate (check BEFORE reading any code)
+
+**ตรวจ `build_evidence` ก่อนเสมอ — ถ้าไม่ผ่าน ให้ reject ทันทีโดยไม่ต้อง review โค้ด:**
+
+```
+ถ้า build_evidence ไม่มีในใน handoff artifact
+  → verdict: changes_requested
+  → finding: "BLOCKER — build_evidence missing. Dev agent must run ./mvnw clean verify
+              and include actual output before review can begin."
+  → หยุด อย่า review ต่อ
+
+ถ้า build_evidence.exit_code != 0
+  → verdict: changes_requested
+  → finding: "BLOCKER — build failed (exit_code: <N>). Fix compilation errors first."
+  → หยุด อย่า review ต่อ
+
+ถ้า build_evidence.summary ไม่มี "Failures: 0, Errors: 0"
+  → verdict: changes_requested
+  → finding: "BLOCKER — tests failing. Fix all test failures before review."
+  → หยุด อย่า review ต่อ
+```
+
+เมื่อ `build_evidence` ผ่าน → ดำเนินการ review ต่อตามปกติ
+
 ## Planning Step (mandatory — complete before reviewing any file)
 
 ก่อน review ไฟล์ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:

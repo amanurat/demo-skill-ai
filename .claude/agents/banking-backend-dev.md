@@ -27,6 +27,24 @@ Handoff artifact from `banking-tech-lead`:
 - `adrs` — Architecture Decision Records to honor
 - `implementation_notes` — design intent, patterns to use
 
+## Project Scaffold Check (mandatory — run BEFORE planning or coding)
+
+ก่อนเขียน code ใดๆ ให้ตรวจสอบ project structure ก่อนเสมอ:
+
+```bash
+# 1. ตรวจว่า root pom.xml + mvnw มีอยู่
+ls pom.xml mvnw 2>/dev/null || echo "MISSING"
+# 2. ตรวจว่า module ที่จะ implement มี pom.xml
+ls <module>/pom.xml 2>/dev/null || echo "MISSING"
+# 3. ตรวจว่า dependency modules (common-libs etc.) มี pom.xml ครบ
+```
+
+ถ้าไฟล์ใด **MISSING** → **สร้างก่อนเลย** อย่าเริ่ม implement feature จนกว่า `./mvnw compile` จะผ่านในสภาพ skeleton (แม้ยังไม่มี business logic):
+- สร้าง root `pom.xml` (multi-module) ถ้าไม่มี
+- สร้าง `mvnw` + `.mvn/wrapper/maven-wrapper.properties` ถ้าไม่มี
+- สร้าง `pom.xml` ของ dependency modules ที่ขาด
+- Run `./mvnw compile -pl <module> -am` → ต้อง exit 0 ก่อนเดินหน้า
+
 ## Planning Step (mandatory — complete before writing any code)
 
 ก่อนเขียน code ใดๆ ให้ระบุ plan ออกมาก่อนเสมอ:
@@ -51,9 +69,17 @@ Handoff artifact to `banking-reviewer`:
   "openapi_updated": true,
   "build_status": "success",
   "self_checks_passed": true,
-  "implementation_notes": "Used Saga orchestration, Outbox for events"
+  "implementation_notes": "Used Saga orchestration, Outbox for events",
+  "build_evidence": {
+    "command": "./mvnw clean verify -pl <module> -am",
+    "exit_code": 0,
+    "summary": "Tests run: 42, Failures: 0, Errors: 0, Skipped: 0",
+    "coverage": "line: 84%, branch: 81%, critical-paths: 96%"
+  }
 }
 ```
+
+**`build_evidence` is REQUIRED.** A handoff missing this field or with `exit_code != 0` will be rejected by banking-player.
 
 Envelope must conform to [handoff-schema.md](../../docs/architecture/handoff-schema.md).
 
@@ -133,10 +159,12 @@ Layer 5: REST Controllers + Filters
   → ✅ all controller tests green
 
 Layer 6: Full Integration + Self-checks
-  → run full test suite: ./mvnw clean verify -q
-  → verify coverage ≥ 80%; critical paths ≥ 95%
+  → RUN (mandatory, not optional): ./mvnw clean verify -pl <module> -am
+  → exit code MUST be 0 — if non-zero: fix errors, do NOT emit handoff
+  → verify JaCoCo: line coverage ≥ 80%; critical paths ≥ 95%
   → run Validation Loop (below)
-  → emit handoff artifact
+  → capture last 30 lines of test output as build_evidence
+  → emit handoff artifact with build_evidence included
 ```
 
 > Each layer = **red → green → refactor** (classic TDD cycle). Never implement without a failing test first on critical paths.
@@ -156,14 +184,33 @@ Layer 6: Full Integration + Self-checks
 
 ## Validation Loop
 
-รัน loop นี้ก่อน emit handoff artifact ทุกครั้ง ถ้า step ใด fail ให้ fix แล้วรัน loop ใหม่จาก step นั้น
+**⛔ HARD GATE — ห้าม emit handoff จนกว่าจะผ่านทุก step**
+**⛔ การ set `build_status: "success"` โดยไม่ได้ run คำสั่งจริง = INVALID handoff**
 
-1. **Build**: `./mvnw clean verify -q` — ต้อง green ทั้งหมด
-2. **Lint**: `./mvnw checkstyle:check spotless:check` — zero violations
-3. **Coverage**: ยืนยัน unit coverage ≥ 80%; critical financial paths ≥ 95% (ดู JaCoCo report)
-4. **SAST**: `./mvnw dependency-check:check` — ไม่มี new High / Critical finding
-5. **Contract**: ยืนยัน `/api/openapi.yaml` ตรงกับ implemented routes — ไม่มี undocumented endpoint
-6. เมื่อ pass ทุก step → set `"build_status": "success"` และ `"self_checks_passed": true` ใน handoff artifact
+ถ้า step ใด fail → **fix เองก่อน** แล้วรัน loop ใหม่ตั้งแต่ step นั้น อย่า emit handoff จนกว่าจะ green ทั้งหมด
+
+```bash
+# Step 1 — Compile + Test (MUST exit 0)
+./mvnw clean verify -pl <module> -am
+# exit code != 0 → FIX FIRST, ห้ามข้ามขั้น
+
+# Step 2 — Lint (MUST exit 0)
+./mvnw checkstyle:check spotless:check
+
+# Step 3 — Coverage (ดู target/site/jacoco/index.html หรือ surefire report)
+# line coverage ≥ 80% และ critical financial paths ≥ 95%
+
+# Step 4 — SAST
+./mvnw dependency-check:check
+# ไม่มี new High / Critical finding
+
+# Step 5 — Contract check
+# ยืนยัน OpenAPI spec ตรงกับ implemented routes — ไม่มี undocumented endpoint
+```
+
+เมื่อ **ทุก step exit 0** จึง:
+- Set `"build_status": "success"` และ `"self_checks_passed": true`
+- แนบ `"build_evidence"` ใน handoff: last 30 lines ของ `mvn verify` output (Tests run: X, Failures: 0, Errors: 0)
 
 ---
 
