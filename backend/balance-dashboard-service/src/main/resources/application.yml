@@ -1,0 +1,142 @@
+spring:
+  application:
+    name: balance-dashboard-service
+
+  # ===== Security (OAuth2 Resource Server) =====
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # ASSUMPTION-TL-002: JWT scope name = "accounts:read" (verify against identity-service staging)
+          issuer-uri: ${IDENTITY_SERVICE_ISSUER_URI:https://identity.bank.local}
+
+  # ===== Redis (Lettuce) — Security C-4: TLS required =====
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      ssl:
+        enabled: true                     # Security C-4 — TLS in transit; at-rest is cluster-level (ASSUMPTION-TL-004)
+      password: ${REDIS_PASSWORD:}         # injected from Vault; rotation per platform policy
+      timeout: 200ms                      # cheap fail-fast; fall through to AccountClient on timeout
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16                  # per pod (SA tech_choices.cache — 16 × 2 pods = 32 connections)
+          max-idle: 16
+          min-idle: 4
+          max-wait: 50ms                  # do not block long if pool saturated
+
+  # ===== Kafka (Audit Event Publisher) =====
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: "1"
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        schema.registry.url: ${APICURIO_URL:http://localhost:8081}
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+    properties:
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+
+  # ===== Jackson =====
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      write-bigdecimal-as-plain: true
+    deserialization:
+      fail-on-unknown-properties: false
+
+# ===== Server =====
+server:
+  port: 8080
+
+# ===== Actuator =====
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never   # never expose internal details externally
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0    # 100% sampling in dev/staging; reduce in prod
+
+# ===== OpenTelemetry =====
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+
+# ===== Resilience4j (AccountClient) — impl-notes §3 =====
+resilience4j:
+  timelimiter:
+    instances:
+      account-client:
+        timeoutDuration: 300ms            # ASSUMPTION-TL-003: verify against staging latency
+        cancelRunningFuture: true
+
+  retry:
+    instances:
+      account-client:
+        maxAttempts: 3                    # 1 initial + 2 retries
+        waitDuration: 100ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2   # 100ms, 200ms
+        retryExceptions:
+          - java.io.IOException
+          - org.springframework.web.client.HttpServerErrorException  # 5xx only
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException  # 4xx — never retry
+
+  circuitbreaker:
+    instances:
+      account-client:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 100
+        failureRateThreshold: 50          # %
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 10
+        minimumNumberOfCalls: 20
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - java.io.IOException
+          - org.springframework.web.client.HttpServerErrorException
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException
+
+  bulkhead:
+    instances:
+      account-client:
+        maxConcurrentCalls: 20
+        maxWaitDuration: 0ms              # fail-fast — do not queue (50 peak concurrent / 2 pods)
+
+# ===== Balance Dashboard Feature Config =====
+balance-dashboard:
+  enabled: false                          # DEFAULT: disabled; explicitly true in staging/application-staging.yml
+  eligible-types: SAVINGS,CURRENT,FIXED_DEPOSIT   # ASSUMPTION-TL-001 config flip (Option B: remove FIXED_DEPOSIT)
+  cache:
+    key-prefix: "balance-dashboard:customer:"
+    ttl-seconds: 30                       # SA ADR-002 — TTL-only, no active invalidation in v1
+
+# ===== Logging =====
+logging:
+  level:
+    com.bank.balancedashboard: DEBUG
+    org.springframework.security: WARN
+    io.lettuce: WARN
+  pattern:
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"

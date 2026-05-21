@@ -1,0 +1,22 @@
+# Staging profile — feature flag ENABLED for sprint demo
+balance-dashboard:
+  enabled: true
+
+# Staging: SSL may be disabled on local Redis (ASSUMPTION-TL-004 to verify at D5)
+spring:
+  data:
+    redis:
+      ssl:
+        enabled: false   # Override: staging Redis cluster may not have TLS; DevOps to verify C-4
+      host: ${REDIS_HOST:redis-staging.bank.local}
+      port: ${REDIS_PORT:6379}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${IDENTITY_SERVICE_ISSUER_URI:https://identity.staging.bank.local}
+
+logging:
+  level:
+    com.bank.balancedashboard: DEBUG

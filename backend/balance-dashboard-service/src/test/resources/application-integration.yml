@@ -1,0 +1,20 @@
+# Integration test profile — overrides base application.yml
+spring:
+  data:
+    redis:
+      ssl:
+        enabled: false   # Testcontainers Redis does not use TLS
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Use a test JWK Set for integration tests (self-signed)
+          issuer-uri: http://localhost:9999/issuer
+
+balance-dashboard:
+  enabled: true   # Feature flag ON for integration tests
+
+logging:
+  level:
+    com.bank.balancedashboard: DEBUG
+    org.springframework.security: DEBUG

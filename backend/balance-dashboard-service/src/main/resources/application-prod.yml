@@ -1,0 +1,23 @@
+# Production profile — feature flag DISABLED until BoT sign-off (impl-notes §9.3)
+balance-dashboard:
+  enabled: false
+
+spring:
+  data:
+    redis:
+      ssl:
+        enabled: true    # Security C-4 — mandatory in prod
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${IDENTITY_SERVICE_ISSUER_URI}
+
+logging:
+  level:
+    com.bank.balancedashboard: INFO
+    org.springframework.security: WARN
