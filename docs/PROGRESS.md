@@ -1,10 +1,10 @@
 # Progress — demo-skill-ai
 
-> Last updated: 2026-05-21 · Branch: `stage/02-balance-comparison` · Session: 2 (Discovery + Design)
+> Last updated: 2026-05-21 · Branch: `stage/02-balance-comparison` · Session: 3 (TL-001 complete)
 
 ## ⚡ Quick Resume
 
-**Main flow:** TL-001 STARTED (partial — 3/7 deliverables done) → **RESUME `banking-tech-lead`** for ADR-005/006/007 + implementation-notes.md + handoff-tl-001.json
+**Main flow:** TL-001 COMPLETE (7/7 deliverables) → **3-way parallel fan-out:** `banking-frontend-dev` + `banking-backend-dev` + `banking-devops` P1
 **Side tracks:** US-MOCK-001..008 user stories drafted → **PAUSED:** `banking-frontend-dev` (Sonnet) for mockup HTML implementation
 
 ---
@@ -25,20 +25,16 @@
 - **Designer P2 HI-FI** — design system foundation (W3C tokens + WCAG evidence) + 14 component specs + 7 screen specs + accessibility-final (handoff-designer-002.json)
 - **US-MOCK-001..008** — user stories drafted for mockup sub-feature (`docs/design/balance-comparison/hifi/mockups/user-stories.md`)
 - **Session-continuity skill** — `.claude/skills/session-continuity/` (this skill + template + cheatsheet)
-- **TL-001 (PARTIAL)** — OpenAPI 3 specs (BDS + account-service extension) + db-schema.md (NO Flyway for BDS, JSONB v1 for audit). 4 deliverables still pending — see Next.
+- **TL-001** — COMPLETE (7/7 deliverables): OpenAPI specs (BDS + account-service ext) + db-schema.md + ADR-005/006/007 + implementation-notes.md + handoff-tl-001.json. Security C-2/C-3 addressed; C-4 as ASSUMPTION-TL-004 (DevOps).
 
 ---
 
 ## ⏭ Next
 
-- [ ] **RESUME `banking-tech-lead`** — finish remaining TL-001 deliverables:
-  - ADR-005 (Design Token consumption contract — SCSS + CSS vars dual-emit)
-  - ADR-006 (CustomerIdResolver pattern — Security C-3)
-  - ADR-007 (Audit event publisher — Kafka, metadata-only payload per C-2 + ADR-003)
-  - `implementation-notes.md` (module layout, Resilience4j config, FE/BE/DevOps notes)
-  - `handoff-tl-001.json` (final envelope, `parallel_next: [FE-dev, BE-dev, DevOps P1]`)
-  - Still-open SA items: #1 Resilience4j verify, #2 JWT scope flag as ASSUMPTION-TL-002, #3 FIXED_DEPOSIT semantic flag as ASSUMPTION-TL-001
-- [ ] (parallel after TL) `banking-frontend-dev` + `banking-backend-dev` + `banking-devops` P1 — 3-way shift-left fan-out
+- [ ] **3-way parallel fan-out** (TL-001 complete → unlocked):
+  - `banking-frontend-dev` — Angular Balance Comparison Dashboard + Style Dictionary tokens setup
+  - `banking-backend-dev` — Scaffold `balance-dashboard-service` Maven module (hexagonal arch, CustomerIdResolver, AuditEventPublisher, Resilience4j)
+  - `banking-devops` P1 — Helm chart skeleton + CI/CD + Apicurio v2 schema registration
 - [ ] (side track) `banking-frontend-dev` (Sonnet) → US-MOCK-001..008 mockup HTML files
 
 ---
@@ -61,6 +57,7 @@
 
 > Append-only log of in-session choices that aren't in formal artifacts. Newest first.
 
+- **2026-05-21 (Session 3)** — TL-001 completed in full. ADR-005 locks Style Dictionary as token generator; ADR-006 codifies CustomerIdResolver pattern (Security C-3); ADR-007 codifies AuditEventPublisher + contract test (Security C-2). 4 TL assumptions documented (non-blocking). 3-way dev fan-out unlocked.
 - **2026-05-21 (end of session — `จบ session`)** — Session ปิดอย่างเป็นทางการผ่าน session-continuity skill. 10 commits ทั้งหมด persisted. Next session: พิมพ์ `ถึงไหนแล้ว` เพื่อดูภาพรวม หรือ `ทำต่อ` เพื่อ resume TL ที่ค้าง.
 - **2026-05-21 (end of session)** — Session ปิดด้วยงานค้างที่ TL-001 partial. Persist ทั้งหมดก่อนปิดเครื่อง — TL ค้าง 4 deliverables ระบุชัดใน Next.
 - **2026-05-21 (late)** — Created `session-continuity` skill + `docs/PROGRESS.md` to solve cross-session memory loss. Commands: `ถึงไหนแล้ว` / `ทำต่อ` / `บันทึก` / `จบ session`.
@@ -90,6 +87,11 @@
 | TL OpenAPI (BDS) | balance-dashboard-service.openapi.yaml | `docs/tech-lead/balance-comparison/openapi/balance-dashboard-service.openapi.yaml` |
 | TL OpenAPI (account-service ext) | account-service-extension.openapi.yaml | `docs/tech-lead/balance-comparison/openapi/account-service-extension.openapi.yaml` |
 | TL DB schema decisions | db-schema.md | `docs/tech-lead/balance-comparison/db-schema.md` |
+| TL ADR-005 | ADR-005-design-token-consumption.md | `docs/tech-lead/balance-comparison/adrs/ADR-005-design-token-consumption.md` |
+| TL ADR-006 | ADR-006-customerid-resolver-pattern.md | `docs/tech-lead/balance-comparison/adrs/ADR-006-customerid-resolver-pattern.md` |
+| TL ADR-007 | ADR-007-audit-event-publisher.md | `docs/tech-lead/balance-comparison/adrs/ADR-007-audit-event-publisher.md` |
+| TL implementation notes | implementation-notes.md | `docs/tech-lead/balance-comparison/implementation-notes.md` |
+| TL-001 handoff | handoff-tl-001.json | `docs/tech-lead/balance-comparison/handoff-tl-001.json` |
 
 ---
 
@@ -110,6 +112,6 @@
 | SA-001 | ✅ true | 1 |
 | Designer P1 | ✅ true | 1 |
 | Designer P2 | ✅ true | 1 |
-| TL-001 | ⏳ PARTIAL (3/7 deliverables) | 1 |
+| TL-001 | ✅ true (7/7 deliverables) | 1 |
 
-**Overall sprint health:** GREEN — all completed phases passed first iteration; TL-001 in progress (paused mid-flow for end-of-session).
+**Overall sprint health:** GREEN — all phases through TL-001 passed first iteration. Ready for 3-way dev fan-out.

@@ -1,0 +1,201 @@
+{
+  "artifact_id": "29280958-8f79-4c96-ac82-b465e5b36a14",
+  "from_agent": "banking-tech-lead",
+  "to_agent": "banking-player",
+  "phase": "DESIGN",
+  "feature": "balance-comparison",
+  "payload": {
+    "sprint": "SPRINT-2026-Q2-BC-01",
+    "tl_artifact_id": "TL-001",
+    "summary": "Tech-lead handoff for balance-comparison. Locks: (a) OpenAPI for BDS GET /api/v1/balance-dashboard + account-service GET /api/v1/accounts?customerId; (b) NO RDBMS / NO Flyway for BDS (only Redis cache + Kafka audit); (c) ADR-005 design-token consumption via Style Dictionary; (d) ADR-006 CustomerIdResolver + IborCheckFilter (resolves Security C-3); (e) ADR-007 AuditEventPublisher port + metadata-only Avro v2 (resolves Security C-2). 4 open assumptions passed forward to BE-dev / DevOps / QA.",
+    "deliverables": [
+      {
+        "id": "openapi-bds",
+        "title": "OpenAPI spec — balance-dashboard-service",
+        "path": "docs/tech-lead/balance-comparison/openapi/balance-dashboard-service.openapi.yaml",
+        "status": "DONE",
+        "notes": "GET /api/v1/balance-dashboard; OAuth2 scope accounts:read; Problem-Detail RFC 7807 errors; no customerId in URL/query/path (Security S-EARLY-003)."
+      },
+      {
+        "id": "openapi-account-ext",
+        "title": "OpenAPI delta — account-service new endpoint",
+        "path": "docs/tech-lead/balance-comparison/openapi/account-service-extension.openapi.yaml",
+        "status": "DONE",
+        "notes": "GET /api/v1/accounts?customerId={uuid} — returns ALL accounts; eligibility filtering is caller responsibility (SUBDEC-002)."
+      },
+      {
+        "id": "db-schema",
+        "title": "DB-schema decision document",
+        "path": "docs/tech-lead/balance-comparison/db-schema.md",
+        "status": "DONE",
+        "notes": "Explicit NO-RDBMS for BDS; Redis cache schema + Lettuce pool; audit-service JSONB-fallback decision (resolves SA open item #4); Avro v2 reference."
+      },
+      {
+        "id": "adr-005",
+        "title": "ADR-005 — Design Token Consumption (Style Dictionary, dual-emit, CI-enforced)",
+        "path": "docs/tech-lead/balance-comparison/adrs/ADR-005-design-token-consumption.md",
+        "status": "DONE",
+        "notes": "Locks Style Dictionary as the tool; CI fails on stale generated outputs; Angular import order; component layer MUST prefer var(--*) over $vars."
+      },
+      {
+        "id": "adr-006",
+        "title": "ADR-006 — CustomerIdResolver Pattern (resolves Security C-3)",
+        "path": "docs/tech-lead/balance-comparison/adrs/ADR-006-customerid-resolver-pattern.md",
+        "status": "DONE",
+        "notes": "CustomerIdResolver bean + IborCheckFilter; JWT sub is sole source of truth; ArchUnit rule forbids request.getHeader(X-Customer-Id) outside the filter; integration test for tampered-header → 403 + audit FORBIDDEN."
+      },
+      {
+        "id": "adr-007",
+        "title": "ADR-007 — Audit Event Publisher (resolves Security C-2)",
+        "path": "docs/tech-lead/balance-comparison/adrs/ADR-007-audit-event-publisher.md",
+        "status": "DONE",
+        "notes": "Hexagonal port AuditEventPublisher; metadata-only AuditEventRecord (no balance / accountId / accountNumber / accounts[] / balanceAsOf / currency); async fire-and-forget Kafka; no outbox per SA ADR-001; contract test byte-greps for forbidden field keys."
+      },
+      {
+        "id": "implementation-notes",
+        "title": "Implementation notes (Maven layout, Resilience4j, Redis, feature flag, FE/DevOps cross-handoff, assumptions register, fallbacks)",
+        "path": "docs/tech-lead/balance-comparison/implementation-notes.md",
+        "status": "DONE",
+        "notes": "12 sections covering everything dev/devops/qa need to start work. Anchors §10 redis-pool-risk, §11 subdec-001-fallback, §12 audit-publisher-contract-test cross-referenced by db-schema and ADRs."
+      }
+    ],
+    "open_assumptions": [
+      {
+        "id": "ASSUMPTION-TL-001",
+        "headline": "AccountInfo.balance for FIXED_DEPOSIT = principal + accrued interest",
+        "owner_to_verify": "banking-backend-dev",
+        "trigger": "Integration test against staging account-service / ledger-service",
+        "fallback": "Escalate to PM/BA per SUBDEC-001 fallback rule. BDS MUST NOT call ledger-service directly. EligibilityPolicy carries config-driven allow-list so type can be removed via config flip if needed (Option B). See implementation-notes §11.",
+        "reference": "docs/tech-lead/balance-comparison/implementation-notes.md#11-subdec-001-fallback"
+      },
+      {
+        "id": "ASSUMPTION-TL-002",
+        "headline": "JWT scope name = accounts:read (matches identity-service registration)",
+        "owner_to_verify": "banking-backend-dev",
+        "trigger": "Integration test against identity-service staging",
+        "fallback": "Adjust @PreAuthorize literal to match registered scope; notify SA to update NFR security_jwt_scope_accounts_read.",
+        "reference": "docs/tech-lead/balance-comparison/implementation-notes.md#6-tl-assumptions-register-open"
+      },
+      {
+        "id": "ASSUMPTION-TL-003",
+        "headline": "Resilience4j defaults (timeout 300ms / retry 2x exp / CB 50%/100/30s / bulkhead 20) hold vs real staging account-service latency",
+        "owner_to_verify": "banking-qa (P1 shift-left perf test with realistic 10-account fixture by D3)",
+        "trigger": "Cold-cache p95 measurement; if staging p95 > 300ms, time-limiter trips on healthy calls",
+        "fallback": "Either (a) raise timeout to 500ms + re-baseline cold p95 to 1000ms with BA sign-off, OR (b) ask account-service team to optimize. NOT silently bump.",
+        "reference": "docs/tech-lead/balance-comparison/implementation-notes.md#3-resilience4j-configuration-accountclient"
+      },
+      {
+        "id": "ASSUMPTION-TL-004",
+        "headline": "Shared Redis cluster has (a) AES-256-GCM at-rest encryption (Security C-4) AND (b) maxclients headroom for BDS pool (16 conn/pod × 2 pods baseline; up to 4 pods under HPA)",
+        "owner_to_verify": "banking-devops (infra inspection by D5)",
+        "trigger": "Cluster CONFIG GET maxclients + CLIENT LIST | wc -l on each shard",
+        "fallback": "(a) Encryption: enable cluster-wide OR provision dedicated namespace. (b) Pool: reduce to 8/pod OR negotiate maxclients headroom.",
+        "reference": "docs/tech-lead/balance-comparison/implementation-notes.md#10-redis-pool-risk"
+      }
+    ],
+    "security_conditions_addressed": {
+      "C-2": "ADR-007 — AuditEventPublisher port emits metadata-only AuditEventRecord (no balance / accountId / accountNumber / accounts[] / balanceAsOf / currency). KafkaAuditEventPublisherContractTest byte-greps serialized output for forbidden field keys (regex matches JSON-key form to avoid false positive on the 'balance' substring inside 'balance-inquiry'). Reflection test fails compilation on a future PR adding a forbidden record component. See implementation-notes §12.",
+      "C-3": "ADR-006 — CustomerIdResolver bean (only path to derive customerId, takes Jwt argument) + IborCheckFilter (the only class permitted to read X-Customer-Id header; emits audit FORBIDDEN on tamper + 403). ArchUnit rule CustomerIdSourceRule fails build if header is read outside the filter or bound via @RequestHeader anywhere. Integration test IborGuardIntegrationTest proves tampered-header → 403 + audit FORBIDDEN + zero downstream calls.",
+      "C-4": "PASSED FORWARD as ASSUMPTION-TL-004 — DevOps verifies shared Redis cluster has AES-256-GCM at-rest encryption by D5. Application config enables TLS in transit (spring.data.redis.ssl.enabled=true). If cluster lacks at-rest encryption, DevOps either enables cluster-wide OR provisions dedicated encrypted namespace before BDS deploys."
+    },
+    "parallel_next": [
+      {
+        "agent": "banking-frontend-dev",
+        "inputs": [
+          "docs/tech-lead/balance-comparison/openapi/balance-dashboard-service.openapi.yaml",
+          "docs/tech-lead/balance-comparison/adrs/ADR-005-design-token-consumption.md",
+          "docs/tech-lead/balance-comparison/implementation-notes.md (§8 frontend notes)",
+          "docs/design/balance-comparison/handoff-designer-002.json (HI-FI)",
+          "docs/design/_shared/tokens.json"
+        ],
+        "scope": "Angular component implementation per Designer HI-FI. Wire Style Dictionary build (npm script tokens:build + tokens:check). Implement BalanceDashboardPage, AccountRow, StaleBanner, EmptyState, ErrorRetryBanner per Designer specs. NO client-side re-sort. Driver: meta.freshness for top banner; per-row isStale for row caption. Idempotency-Key: N/A (read-only GET). Heroicons mapping per implementation-notes §8.4.",
+        "expected_artifacts": "frontend/src/app/features/balance-comparison/* (TS+HTML+SCSS), frontend/src/styles/tokens.{scss,css} (generated), tools/design-tokens/style-dictionary.config.cjs, component-level unit tests, Playwright E2E covering AC-001/002/003/005, OTel browser instrumentation per common-libs convention.",
+        "blocking_on": []
+      },
+      {
+        "agent": "banking-backend-dev",
+        "inputs": [
+          "docs/tech-lead/balance-comparison/openapi/balance-dashboard-service.openapi.yaml",
+          "docs/tech-lead/balance-comparison/openapi/account-service-extension.openapi.yaml",
+          "docs/tech-lead/balance-comparison/db-schema.md",
+          "docs/tech-lead/balance-comparison/adrs/ADR-006-customerid-resolver-pattern.md",
+          "docs/tech-lead/balance-comparison/adrs/ADR-007-audit-event-publisher.md",
+          "docs/tech-lead/balance-comparison/implementation-notes.md"
+        ],
+        "scope": "Scaffold backend/balance-dashboard-service/ per Maven layout (§1). Implement hexagonal domain/application/infrastructure. Wire Resilience4j on AccountClientAdapter per §3 (TimeLimiter→CB→Retry→Bulkhead). Implement CustomerIdResolver + IborCheckFilter (ADR-006) with ArchUnit rule. Implement KafkaAuditEventPublisher (ADR-007) — async fire-and-forget, no .get(), no outbox. Implement RedisCacheRepository with SETEX (NEVER SET+EXPIRE separately). Verify ASSUMPTION-TL-001 (FIXED_DEPOSIT balance semantics) — escalate per §11 if violated. Verify ASSUMPTION-TL-002 (JWT scope name). Add listAccountsByCustomer method to common-libs/account-client-lib AND implement endpoint in account-service. Verify accounts(customer_id) index exists in account-service migrations per §7 — file new migration in account-service if absent.",
+        "expected_artifacts": "backend/balance-dashboard-service/* (full module), backend/account-service/* extension (new endpoint + repo method), common-libs/account-client-lib extension (new interface method), unit tests for Ranker/EligibilityPolicy/CustomerIdResolver, integration tests IborGuardIntegrationTest + CacheHitAuditEmittedTest + UpstreamFailureReturns503Test, KafkaAuditEventPublisherContractTest, ArchUnit CustomerIdSourceRule.",
+        "blocking_on": []
+      },
+      {
+        "agent": "banking-devops",
+        "phase": "P1",
+        "inputs": [
+          "docs/tech-lead/balance-comparison/implementation-notes.md (§9 DevOps P1 notes)",
+          "docs/tech-lead/balance-comparison/db-schema.md (§5 Avro v2 schema)",
+          "docs/sa/balance-comparison/handoff-sa-001.json (tech_choices.deployment + risks SA-RISK-002 + SA-RISK-004)"
+        ],
+        "scope": "P1 (shift-left, parallel with BE/FE dev) — scaffold infra/helm/balance-dashboard-service/ Helm chart (2 replicas min, topologySpreadConstraints across 2 AZs, NetworkPolicy: ingress from api-gateway only / egress to account-service+Redis+Kafka+Apicurio, HPA on CPU 70% + custom metric balance_dashboard_requests_total). Wire Style Dictionary CI job (design-tokens-up-to-date per ADR-005 §2.3). Register AuditEventRecorded v2 (com.bank.compliance.audit.v2 namespace) in Apicurio by D6 (BLOCKING for D8 BDS deploy per SA-RISK-002). Verify ASSUMPTION-TL-004 (Redis at-rest encryption + maxclients headroom) by D5. Bootstrap feature flag: staging=true, prod=false. Wire Prometheus scrape from /actuator/prometheus.",
+        "expected_artifacts": "infra/helm/balance-dashboard-service/* (Chart + values + values-prod + templates), .github/workflows/design-tokens.yml (or equivalent), Apicurio schema registration evidence (D6 deliverable), Redis cluster verification report (D5 deliverable per ASSUMPTION-TL-004).",
+        "blocking_on": [
+          "SA-RISK-002 — v2 Avro schema registration by D6 (DevOps blocker — escalate to PM if D6 missed)"
+        ]
+      }
+    ],
+    "cross_references": {
+      "sa_handoff": "docs/sa/balance-comparison/handoff-sa-001.json",
+      "ba_user_stories": "docs/ba/balance-comparison/user-stories.md",
+      "ba_nfr": "docs/ba/balance-comparison/nfr.md",
+      "pm_handoff": "docs/pm/balance-comparison/handoff-pm-001.json",
+      "security_early_review": "docs/security/balance-comparison/early-review-consent-coverage.md",
+      "designer_p2_handoff": "docs/design/balance-comparison/handoff-designer-002.json",
+      "shared_tokens": "docs/design/_shared/tokens.json"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T13:31:46Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "f2b9c1a7-3e4d-4a6b-8f12-5d7e9c4b2a18",
+    "parallel_next": [
+      "banking-frontend-dev",
+      "banking-backend-dev",
+      "banking-devops (P1)"
+    ],
+    "quality_gate_self_check": {
+      "all_user_stories_have_endpoint_or_workflow": true,
+      "openapi_lints_clean": "asserted_in_db_schema_and_openapi_authoring; spectral run is a CI gate in DevOps P1",
+      "all_acceptance_criteria_traced": {
+        "AC-001": "openapi GET /api/v1/balance-dashboard + ADR-006 IDOR + ADR-007 audit + implementation-notes §8 empty-state",
+        "AC-002": "openapi response schema BalanceDashboardResponse fields rank+accountId+maskedAccountNumber+accountType+balance+currency+balanceAsOf+isStale",
+        "AC-003": "implementation-notes §3 Resilience4j + §4 Redis cache + implementation-notes §8.6 error UX",
+        "AC-005": "ADR-005 design tokens + Designer HI-FI handoff + implementation-notes §8 frontend notes (server-authoritative rank for ARIA per SA ADR-004)"
+      },
+      "db_schema_reviewed_pk_fk_index_constraints_optimistic_lock": "N/A — NO RDBMS for BDS (db-schema §2). account-service index verification owned by BE-dev (§7).",
+      "all_migrations_reversible_down_plan_documented": "N/A — BDS has 0 migrations (db-schema §1). account-service's potential new index has documented DROP INDEX down plan in §7.",
+      "error_responses_use_problem_detail": true,
+      "threat_model_done_STRIDE": "Spoofing/Tampering/Repudiation/Info-disclosure/DoS/EoP covered across ADR-006 (S+T+EoP via IDOR), ADR-007 (R via mandatory audit), implementation-notes §3 (DoS via Resilience4j+bulkhead), §4 (info-disclosure via Redis TLS+encryption-at-rest verification).",
+      "at_least_one_adr_per_non_trivial_decision": true,
+      "adr_count_this_handoff": 3,
+      "adr_topics": ["design-token-consumption (ADR-005)", "customerid-resolver-pattern (ADR-006)", "audit-event-publisher (ADR-007)"],
+      "frontend_notes_provided": true,
+      "backend_notes_provided": true,
+      "devops_notes_provided": true,
+      "security_conditions_addressed": {
+        "C-1": "DEFERRED to SA (privacy notice update before GA — post-demo, not sprint-blocking)",
+        "C-2": "RESOLVED via ADR-007 (metadata-only) + implementation-notes §12 (contract test)",
+        "C-3": "RESOLVED via ADR-006 (CustomerIdResolver + IborCheckFilter + ArchUnit)",
+        "C-4": "PASSED FORWARD as ASSUMPTION-TL-004 (DevOps verifies by D5)"
+      },
+      "money_columns_check": "N/A — no RDBMS migrations authored in BDS. AccountInfo.balance is BigDecimal (inherited from money-transfer common-libs).",
+      "flyway_versions_sequential_no_gaps": "N/A — BDS has 0 migrations.",
+      "operationId_unique_across_specs": "BDS endpoint operationId 'getBalanceDashboard'; account-service extension operationId 'listAccountsByCustomer' — verified non-collision with existing money-transfer openapi.",
+      "subdec_001_fallback_documented": true,
+      "subdec_002_resolution_specced_in_openapi_account_extension": true,
+      "all_4_security_conditions_have_disposition": true,
+      "all_4_tl_assumptions_have_owner_trigger_fallback": true,
+      "parallel_next_includes_three_agents": true
+    },
+    "notes": "TL-001 complete. 3 new ADRs (005/006/007) — ADRs 001-004 are SA-owned and untouched. ADR-006 and ADR-007 each resolve one Security early-review condition; ADR-005 implements the Designer dual-emit contract. The handoff splits 3-way (FE / BE / DevOps P1) — no sequential blocking between them. Critical D6 milestone: Apicurio v2 schema registration (DevOps owns; BDS deploy on D8 depends on it). Critical D5 milestones: Redis cluster verification (ASSUMPTION-TL-004) + audit-service storage path JSONB confirmation (already decided in db-schema §4)."
+  }
+}
