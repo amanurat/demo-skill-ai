@@ -61,6 +61,7 @@
 
 > Append-only log of in-session choices that aren't in formal artifacts. Newest first.
 
+- **2026-05-21 (end of session — `จบ session`)** — Session ปิดอย่างเป็นทางการผ่าน session-continuity skill. 10 commits ทั้งหมด persisted. Next session: พิมพ์ `ถึงไหนแล้ว` เพื่อดูภาพรวม หรือ `ทำต่อ` เพื่อ resume TL ที่ค้าง.
 - **2026-05-21 (end of session)** — Session ปิดด้วยงานค้างที่ TL-001 partial. Persist ทั้งหมดก่อนปิดเครื่อง — TL ค้าง 4 deliverables ระบุชัดใน Next.
 - **2026-05-21 (late)** — Created `session-continuity` skill + `docs/PROGRESS.md` to solve cross-session memory loss. Commands: `ถึงไหนแล้ว` / `ทำต่อ` / `บันทึก` / `จบ session`.
 - **2026-05-21** — User approved Sonnet model for FE implementation tasks (US-MOCK HTML mockups + future Angular implementation). Opus stays for strategic agents (PM/BA/SA/TL/Designer/Security).
