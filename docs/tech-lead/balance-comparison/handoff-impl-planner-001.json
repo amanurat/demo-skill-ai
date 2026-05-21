@@ -1,0 +1,37 @@
+{
+  "artifact_id": "f3a9c7e2-84b1-4d56-a023-9e1f7c3b5d8a",
+  "from_agent": "banking-implementation-planner",
+  "to_agent": "banking-player",
+  "phase": "PLANNING",
+  "feature": "balance-comparison",
+  "payload": {
+    "task_plan_path": "docs/tech-lead/balance-comparison/task-plan.md",
+    "be_layers": 6,
+    "fe_steps": 5,
+    "ac_coverage_map": "docs/tech-lead/balance-comparison/task-plan.md#test-coverage-map-ac--test",
+    "security_traceability": "docs/tech-lead/balance-comparison/task-plan.md#security-conditions-traceability",
+    "interface_contracts_locked": true,
+    "parallel_next": [
+      {
+        "agent": "banking-backend-dev",
+        "blocking_on": []
+      },
+      {
+        "agent": "banking-frontend-dev",
+        "blocking_on": []
+      },
+      {
+        "agent": "banking-devops",
+        "phase": "P1",
+        "blocking_on": ["SA-RISK-002 Apicurio schema registration by D6"]
+      }
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": true,
+    "quality_gate": "G4",
+    "iteration": 1,
+    "notes": "All 6 BE layers + 5 FE steps specified. All 25 BA acceptance criteria (US-BC-001..005) trace to ≥1 test each — 100% AC coverage. Security C-2/C-3/C-4 each traced to specific classes + tests: C-2→KafkaAuditEventPublisherContractTest (byte-grep + reflection), C-3→CustomerIdSourceRule ArchUnit + IborGuardIntegrationTest, C-4→DevOps P1 infra verification (ASSUMPTION-TL-004). Interface contracts locked: balance=string (not number), accountNumberMasked=****XXXX, rank=server-authoritative, no FE re-sort. All 4 TL assumptions carried forward with owners, verification triggers, and fallbacks. Architecture constraints enforced: NO-RDBMS (DataSource exclusions), hexagonal purity checks, Resilience4j operator order (TimeLimiter→CB→Retry→Bulkhead), Redis SETEX atomic write, fail-open no CB on Redis, 501-not-404 for disabled feature flag. Total test cases specified: ~75 BE tests + ~55 FE tests = ~130 across unit/integration/contract/arch layers. Flag: ASSUMPTION-TL-001 (FIXED_DEPOSIT balance composition) must be verified at Layer 4 integration test against staging; escalate to PM if principal-only."
+  }
+}
