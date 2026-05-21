@@ -1,0 +1,109 @@
+{
+  "artifact_id": "6e3a8f12-9d44-4b7e-a51c-2f0c7b8e3d49",
+  "from_agent": "banking-reviewer-be",
+  "to_agent": "banking-player",
+  "phase": "REVIEW",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "changes_requested",
+    "iteration": 2,
+    "findings": [
+      {
+        "id": "R-BE-202",
+        "severity": "blocker",
+        "file": "backend/balance-dashboard-service/src/main/resources/application.yml",
+        "line": 37,
+        "rule": "banking: kafka-serializer-class-missing-on-classpath",
+        "message": "spring.kafka.producer.value-serializer = io.apicurio.registry.serde.avro.AvroKafkaSerializer but pom.xml has no Apicurio dependency. Spring context will fail to start with ClassNotFoundException at KafkaTemplate bean creation. KafkaAuditEventPublisherContractTest does not exercise this path (uses ObjectMapper.writeValueAsString) so the regression is not caught in inner dev loop.",
+        "suggested_fix": "Add io.apicurio:apicurio-registry-serdes-avro-serde:2.5.11.Final + avro deps to pom.xml AND add a @Configuration class declaring ProducerFactory<String, AuditEventRecorded> + KafkaTemplate<String, AuditEventRecorded> beans. Alternative: revert value-serializer to StringSerializer with an explicit TODO/JIRA ticket per ASSUMPTION-TL-004 fallback. Update the contract test to assert Class.forName(value-serializer) succeeds."
+      },
+      {
+        "id": "R-BE-203",
+        "severity": "blocker",
+        "file": "backend/balance-dashboard-service/src/test/java/com/bank/balancedashboard/unit/BalanceDashboardControllerTest.java",
+        "line": 56,
+        "rule": "banking: webmvctest-conditional-onproperty-not-overridden",
+        "message": "BalanceDashboardController is @ConditionalOnProperty(name=balance-dashboard.enabled, havingValue=true), but base application.yml line 130 sets the flag false. The test class has no @TestPropertySource or @ActiveProfiles to flip it. Therefore the controller bean is NOT registered in the @WebMvcTest context — all 9 tests that perform mockMvc.perform(get(/api/v1/balance-dashboard)) will produce 501 (or 404) instead of the asserted status. R-BE-005/006 fix is non-functional.",
+        "suggested_fix": "Add @TestPropertySource(properties = \"balance-dashboard.enabled=true\") at the class level of BalanceDashboardControllerTest. Run mvn test -Dtest=BalanceDashboardControllerTest to verify all 11 cases pass."
+      },
+      {
+        "id": "R-BE-204",
+        "severity": "major",
+        "file": "backend/balance-dashboard-service/src/test/java/com/bank/balancedashboard/integration/CacheHitAuditEmittedTest.java",
+        "line": 105,
+        "rule": "banking: test-name-lies-about-what-it-verifies",
+        "message": "Test class titled CacheHitAuditEmittedTest with DisplayName 'Cache hit -> audit emitted with cacheHit=true (BR-014)' actually asserts X-Cache: MISS (line 105) and audit with cacheHit=false. Iteration 2 added @Testcontainers + Redis + Kafka but the test body still issues ONE request and never exercises the warm-cache path. The R-BE-011 mandate ('Warm-cache request -> response from Redis -> audit STILL emitted with cacheHit=true') is unmet. @MockBean AuditEventPublisher also wastes the Kafka container.",
+        "suggested_fix": "Make the test issue TWO requests: (1st) cache-miss → MISS + cacheHit=false; (2nd) replay → HIT + cacheHit=true. Verify AuditEventPublisher.publish() called TWICE with the SECOND record having cacheHit=true. Either drop the Kafka container or let the real KafkaAuditEventPublisher run + assert via KafkaConsumer.poll()."
+      },
+      {
+        "id": "R-BE-205",
+        "severity": "major",
+        "file": "backend/balance-dashboard-service/src/test/java/com/bank/balancedashboard/integration/UpstreamFailureReturns503Test.java",
+        "line": 92,
+        "rule": "banking: wiremock-declared-not-used-mock-theatre",
+        "message": "@Testcontainers + Redis + Kafka containers wired but the test @MockBeans AccountPort and throws DashboardUnavailableException directly. WireMock is in pom (line 163-168) but no test code references WireMockServer or stubFor. Resilience4j operator chain (TimeLimiter→CB→Retry→Bulkhead) is bypassed entirely. R-BE-012 mandate ('WireMock stubbed account-service returns 500 until CB trips') unmet.",
+        "suggested_fix": "Replace @MockBean AccountPort with a real AccountClientAdapter wired through AccountClientLib pointed at a WireMockServer. Stub WireMock for HTTP 500 consecutively; verify CB transitions OPEN after minimumNumberOfCalls=20 with failureRateThreshold=50%. Add separate tests for TimeLimiter (fixed-delay > 300ms) and Bulkhead (21 concurrent)."
+      },
+      {
+        "id": "R-BE-206",
+        "severity": "major",
+        "file": "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/client/AccountClientAdapter.java",
+        "line": 117,
+        "rule": "banking: dead-catch-block-unreachable",
+        "message": "catch (UpstreamUnavailableException e) at line 117 is unreachable — neither AccountClientLib.listAccountsByCustomer() nor any Resilience4j-wrapped path throws this type. Other catches (TimeoutException, CallNotPermittedException, BulkheadFullException, RuntimeException) cover the Resilience4j failure modes. UpstreamUnavailableException.java itself is now effectively dead infrastructure.",
+        "suggested_fix": "Either delete UpstreamUnavailableException.java + its catch block, OR define an explicit contract for when AccountClientLib throws it and add a corresponding unit test. Recommend deletion — the domain DashboardUnavailableException is the only meaningful exception type now."
+      },
+      {
+        "id": "R-BE-207",
+        "severity": "major",
+        "file": "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/audit/KafkaAuditEventPublisher.java",
+        "line": 38,
+        "rule": "banking: kafkatemplate-typed-injection-no-factory",
+        "message": "Constructor injects KafkaTemplate<String, AuditEventRecorded> but no @Configuration class declares a typed ProducerFactory or KafkaTemplate bean. grep src/main for ProducerFactory|@Bean.*KafkaTemplate returns zero. Spring Boot auto-config creates KafkaTemplate<Object, Object>; generic erasure may allow raw-type injection but ADR-007 §2.4's 'compile-time contract enforcement' is not actually achieved at the Spring DI layer.",
+        "suggested_fix": "Add KafkaProducerConfig @Configuration with explicit ProducerFactory<String, AuditEventRecorded> + KafkaTemplate<String, AuditEventRecorded> @Beans loading the configured serializers. Pair with R-BE-202 fix."
+      },
+      {
+        "id": "R-BE-208",
+        "severity": "minor",
+        "file": "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/rest/ProblemDetailAdvice.java",
+        "line": 39,
+        "rule": "banking: correlationid-not-derived-from-otel-trace-in-error-path",
+        "message": "R-BE-013 fixed the happy path (BalanceDashboardService uses Span.current().getSpanContext().getTraceId()) but ProblemDetailAdvice handlers still use UUID.randomUUID() at lines 39, 64, 90. On 503/403/500 the FE receives a correlationId that has no relationship to the upstream OTel trace; operators searching Tempo/Jaeger by response correlationId will fail.",
+        "suggested_fix": "Extract a CorrelationIdProvider utility used by both BalanceDashboardService and ProblemDetailAdvice. Returns Span.current().getSpanContext().isValid() ? .getTraceId() : UUID.randomUUID().toString()."
+      },
+      {
+        "id": "R-BE-209",
+        "severity": "minor",
+        "file": "backend/balance-dashboard-service/src/main/resources/application.yml",
+        "line": 41,
+        "rule": "banking: schema-registry-localhost-fallback-in-prod",
+        "message": "schema.registry.url: ${SCHEMA_REGISTRY_URL:${APICURIO_URL:http://localhost:8081}} — if neither env var is set in prod, value silently becomes localhost:8081 and the producer fails after a long timeout. Production should fail-fast on missing config.",
+        "suggested_fix": "In application-prod.yml override spring.kafka.producer.properties.schema.registry.url: ${SCHEMA_REGISTRY_URL} (no fallback). Keep the localhost default only in base application.yml for dev."
+      },
+      {
+        "id": "R-BE-210",
+        "severity": "nit",
+        "file": "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/audit/KafkaAuditEventPublisher.java",
+        "line": 88,
+        "rule": "banking: dead-cascading-catch-exception-after-runtimeexception",
+        "message": "catch (Exception e) after catch (RuntimeException e) is unreachable — the try block only throws RuntimeException subtypes (UUID.toString cannot fail).",
+        "suggested_fix": "Remove the catch (Exception e) block."
+      },
+      {
+        "id": "R-BE-211",
+        "severity": "nit",
+        "file": "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/audit/AvroMapper.java",
+        "line": 32,
+        "rule": "banking: defensive-null-checks-after-record-validates-non-null",
+        "message": "AvroMapper still null-checks actorId, channel, result. R-BE-014 made actorId non-null at record construction; channel and result should be similarly validated.",
+        "suggested_fix": "Add Objects.requireNonNull(channel, ...) and Objects.requireNonNull(result, ...) to AuditEventRecord compact constructor; then simplify AvroMapper to plain .toString()/.name() calls."
+      }
+    ],
+    "review_report_path": "docs/review/balance-comparison/review-be-002.md"
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": false,
+    "next_agent": "banking-refactoring"
+  }
+}
