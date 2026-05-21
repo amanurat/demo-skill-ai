@@ -119,6 +119,25 @@ See [docs/architecture/workflow.md](docs/architecture/workflow.md) for feedback 
 
 ---
 
+## 🧠 Session Continuity (Resume Protocol)
+
+> **📌 Skill:** [`session-continuity`](.claude/skills/session-continuity/SKILL.md) · **State file:** [`docs/PROGRESS.md`](docs/PROGRESS.md)
+
+Multi-session AI projects ลืม context ระหว่าง session — ใช้ 4 คำสั่งสั้นๆ เพื่อ resume:
+
+| คำสั่ง (TH) | คำสั่ง (EN) | สิ่งที่เกิดขึ้น |
+|---|---|---|
+| `ถึงไหนแล้ว` | `status` | Claude อ่าน `PROGRESS.md` → summary 5-10 บรรทัด → **รอ direction** (ไม่ launch agent) |
+| `ทำต่อ` | `resume` | Claude อ่าน `PROGRESS.md` → continue next step (ถามถ้ามี ambiguity) |
+| `บันทึก` | `save` | Update `PROGRESS.md` (ad-hoc decisions + next agent) — ไม่ git commit |
+| `จบ session` | `end` | Save + แสดง git commit command + แนะนำคำสั่ง resume สำหรับ session ถัดไป |
+
+**เปิด session ใหม่:** พิมพ์ `ถึงไหนแล้ว` แล้ว Claude จะอ่าน `docs/PROGRESS.md` + git log + handoff JSON files → บอกสถานะให้
+
+**Full playbook:** [`.claude/skills/session-continuity/SKILL.md`](.claude/skills/session-continuity/SKILL.md) · **Cheatsheet:** [`commands-cheatsheet.md`](.claude/skills/session-continuity/references/commands-cheatsheet.md)
+
+---
+
 ## 🚦 Quick Start (for the user)
 
 > **📘 Full step-by-step guide:** [docs/playbook.md](docs/playbook.md) — interactive checklist สำหรับทุก session (Discovery → Deploy) พร้อมตัวอย่างคำสั่ง + git commit templates
