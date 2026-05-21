@@ -1,0 +1,346 @@
+{
+  "artifact_id": "c4e9f1b2-7a3d-4c85-b6f0-1e8d2a5c9047",
+  "from_agent": "banking-ba",
+  "to_agent": "banking-solution-architect",
+  "phase": "PLANNING",
+  "feature": "balance-comparison",
+  "payload": {
+    "user_stories": [
+      {
+        "id": "US-BC-001",
+        "title": "List my accounts ranked by balance (descending)",
+        "as_a": "authenticated retail customer",
+        "i_want": "to see all my own active accounts in a single ranked list ordered from highest to lowest balance",
+        "so_that": "I can compare my balances at a glance and decide where to move funds",
+        "acceptance_criteria": [
+          "AC-001-H1: Given I am authenticated with a valid JWT (scope accounts:read) and have 3+ ACTIVE SAVINGS/CURRENT/FIXED_DEPOSIT accounts, When I request the balance dashboard, Then HTTP 200 returns all my active in-scope accounts ordered by balance DESC with fields accountId, masked accountNumber (****XXXX), accountType, balance, currency, balance_as_of",
+          "AC-001-H2: Given two or more accounts have identical balance values, When the ranked list is returned (including multiple requests from warm cache), Then those accounts are always ordered by accountId ASC as a deterministic tie-break — ordering never changes between identical requests within TTL",
+          "AC-001-H3: Given any successful dashboard retrieval (cache hit or miss), When the response is returned, Then audit-service receives an event with eventType=BALANCE_INQUIRY, actorId=customerId, purpose=balance-inquiry, cacheHit flag, correlationId, timestamp UTC, result=SUCCESS — the audit event is never suppressed by cache",
+          "AC-001-H4: Given accounts denominated in THB (native-currency-only mode per OPEN-001), When I view the ranked list, Then each row shows its own currency code and no FX conversion or total-in-home-currency is performed or displayed",
+          "AC-001-E1: Given I am authenticated but have no ACTIVE SAVINGS/CURRENT/FIXED_DEPOSIT accounts, When I request the dashboard, Then HTTP 200 returns empty accounts array with a UI empty-state indicator, and audit event is still emitted with accountCount=0",
+          "AC-001-E2: Given I am authenticated as customer A, When I attempt to supply a customerId belonging to customer B in the request, Then the service returns HTTP 403 Forbidden, no account data for customer B is returned, and an audit event is emitted with result=FORBIDDEN",
+          "AC-001-E3: Given I am not authenticated (no JWT or expired JWT), When I request the dashboard endpoint, Then the service returns HTTP 401 Unauthorized and no account data is returned"
+        ],
+        "priority": "MUST",
+        "dependencies": {
+          "reuse": [
+            "AccountClient.listAccountsByCustomer() — money-transfer feature",
+            "AccountInfo DTO — money-transfer feature (docs/artifacts/S2-ba-money-transfer.json entity: Account)",
+            "OAuth2/OIDC + JWT auth filter chain",
+            "audit-service event emitter"
+          ],
+          "new": [
+            "balance-dashboard aggregation endpoint (SA: decide service boundary via ADR)",
+            "ranking logic: balance DESC, accountId ASC tie-break"
+          ]
+        }
+      },
+      {
+        "id": "US-BC-002",
+        "title": "See per-account details (type, balance, currency, last updated)",
+        "as_a": "authenticated retail customer",
+        "i_want": "each account row to clearly show the account type, balance, currency, and when the balance was last updated",
+        "so_that": "I have enough context to evaluate each account and act on the comparison",
+        "acceptance_criteria": [
+          "AC-002-H1: Given an ACTIVE SAVINGS account with balance 45000.00 THB and balance_as_of=2026-05-21T08:00:00Z, When I view the dashboard, Then the row shows type label in Thai/English (not raw enum), balance as formatted decimal with currency symbol, masked accountNumber (last 4 only), and Last updated as relative time derived from balance_as_of (hover shows absolute ISO timestamp in DD MMM YYYY HH:mm ICT)",
+          "AC-002-H2: Given an ACTIVE FIXED_DEPOSIT account where AccountInfo exposes balance=principal+accrued_interest as of balance_as_of, When I view the dashboard, Then the displayed balance reflects principal + accrued interest, label shows Fixed Deposit Account, and balance_as_of is the Last updated source (not row updated_at)",
+          "AC-002-H3: Given my account number is 1234567890, When I view the dashboard in UI or inspect API JSON or browser network tab, Then in all three surfaces the number appears as ******7890 (last 4 only) and the full number is absent from DOM, JSON payload, and browser console logs",
+          "AC-002-H4: Given I have one account each of type SAVINGS, CURRENT, FIXED_DEPOSIT, When I view the dashboard, Then each row shows the correct Thai-language label and English equivalent — no raw enum string (SAVINGS, CURRENT, FIXED_DEPOSIT) is visible to the customer",
+          "AC-002-E1: Given a FIXED_DEPOSIT account whose balance_as_of is 24 hours old, When I view the dashboard, Then Last updated reflects the actual balance_as_of value, the system does not substitute updated_at or current timestamp, and a may-be-stale indicator is shown because 24h > 60s staleness threshold",
+          "AC-002-E2: Given AccountInfo returned from AccountClient has a null or absent balance_as_of for a particular account, When the aggregation service processes it, Then Last updated displays a dash or Not available label, the account is still included in the ranked list, and an observability warning log is emitted with the affected accountId"
+        ],
+        "priority": "MUST",
+        "sub_decisions_for_sa_tl": [
+          "SUBDEC-001: FIXED_DEPOSIT balance composition — BA default: principal + accrued interest as of balance_as_of if AccountInfo exposes it. SA/TL to confirm via ADR. If AccountInfo returns principal only, TL flags to PM before implementation and defaults to principal-only with accrued-interest note."
+        ],
+        "dependencies": {
+          "reuse": [
+            "AccountInfo DTO fields (accountId, accountNumber masked, accountType, balance, currency, status, balance_as_of)",
+            "PDPA account-number masking convention from money-transfer (****XXXX)"
+          ],
+          "new": [
+            "accountType display-label mapping (Thai/English) — TL/FE to implement",
+            "balance_as_of relative-time formatter with hover absolute timestamp — FE concern"
+          ]
+        }
+      },
+      {
+        "id": "US-BC-003",
+        "title": "Dashboard meets p95 < 500ms for 10 accounts",
+        "as_a": "authenticated retail customer on a mobile device",
+        "i_want": "the balance dashboard to feel instant when I open it",
+        "so_that": "I do not abandon the screen on 4G networks",
+        "acceptance_criteria": [
+          "AC-003-H1: Given the Redis cache has been warmed with my account data (within 30s TTL), When I request the balance dashboard, Then server-side response time is below 500ms at p95, measured via k6/Gatling on staging with 10-account fixture, and response is served from Redis (observable via cache-hit span or X-Cache header)",
+          "AC-003-H2: Given the Redis cache has no entry for my customerId (cold start or post-TTL), When I request the dashboard, Then server-side response time is below 800ms at p95, data is fetched from AccountClient via single batched call (not N round-trips), and result is written to Redis with TTL 30s",
+          "AC-003-H3: Given any dashboard request whether served from Redis or AccountClient, When the response is returned, Then an audit event is emitted to audit-service with eventType=BALANCE_INQUIRY and is observable in audit-service log and Grafana audit-event rate panel",
+          "AC-003-H4: Given the Redis cache holds account data with balance_as_of timestamps, When the cached response is returned, Then balance_as_of for each account matches the value stored at cache population time — the Last updated UI label reflects that timestamp, not the cache-hit request time",
+          "AC-003-E1: Given the Redis instance is unreachable at the time of a request, When I request the dashboard, Then the service falls back to AccountClient and returns HTTP 200, no Redis error is exposed to the customer, a cache_miss_reason=REDIS_UNAVAILABLE metric is emitted, and the audit event is still emitted",
+          "AC-003-E2: Given the balance-dashboard service has been running for 5+ minutes in staging, When I view the Grafana dashboard, Then I can observe p95 latency per endpoint, Redis cache hit ratio as a percentage (target > 70% after warm-up), and audit-event emission rate per minute — all sourced from the existing OTel/Prometheus pipeline"
+        ],
+        "priority": "MUST",
+        "business_rules": {
+          "cache_key": "customer:{customerId}:accounts",
+          "cache_ttl_seconds": 30,
+          "invalidation_strategy_v1": "TTL-only (event-driven invalidation deferred to next sprint)",
+          "cache_payload_must_include": "balance_as_of per account entry",
+          "audit_on_cache_hit": true,
+          "fail_open_on_redis_unavailable": true,
+          "accountclient_call_pattern": "single batched call per customer request",
+          "warm_cache_p95_ms": 500,
+          "cold_cache_p95_ms": 800
+        },
+        "dependencies": {
+          "reuse": [
+            "Existing Redis cluster (ASSUME-004 — shared infra, pre-provisioned for staging)",
+            "Existing OpenTelemetry tracing setup"
+          ],
+          "new": [
+            "Redis cache key strategy and TTL configuration",
+            "Batched AccountClient call pattern (SA/TL to confirm batch API signature)",
+            "Grafana panel: p95 latency, cache hit ratio, audit-event rate"
+          ]
+        }
+      },
+      {
+        "id": "US-BC-005",
+        "title": "Mobile-first responsive layout and accessibility (WCAG 2.1 AA)",
+        "as_a": "retail customer using a mobile device or assistive technology",
+        "i_want": "the balance dashboard to be fully usable on small screens and with keyboard/screen-reader navigation",
+        "so_that": "the feature is accessible to all customers",
+        "acceptance_criteria": [
+          "AC-005-H1: Given I open the dashboard on a 375px viewport, When it renders with 3+ accounts, Then no horizontal scrollbar appears, all content (type label, masked number, balance, last-updated) is readable without side-scrolling",
+          "AC-005-H2: Given I am using VoiceOver (iOS) or TalkBack (Android), When I navigate to the balance dashboard, Then the screen reader announces each row with (a) rank position Account N of M, (b) human-readable account type label, (c) masked account number, (d) balance as full spoken amount e.g. 45000 baht, (e) last updated relative time, and the list structure is conveyed",
+          "AC-005-H3: Given I navigate with keyboard only, When I press Tab from the first focusable element, Then focus moves through each account row in rank order with a visible focus ring (contrast >= 3:1), and Shift+Tab reverses navigation correctly",
+          "AC-005-H4: Given the Angular <balance-dashboard> component is rendered on the demo staging URL, When I run Lighthouse mobile audit on Accessibility category, Then the score is 90 or higher and the evidence is attached to the QA report",
+          "AC-005-E1: Given the user has increased browser/OS font size to 200%, When the balance dashboard renders, Then no text is clipped, overlapping, or truncated and the layout adapts with graceful line-wrapping",
+          "AC-005-E2: Given an account with balance 45000.00, When a screen reader reads the balance figure, Then it reads the full amount as a single unit (45000 baht) and not as individual characters — achieved via explicit aria-label attribute on the balance element"
+        ],
+        "priority": "SHOULD",
+        "stretch": true,
+        "drop_condition": "Drop if reviewer iterations exceed 2 rounds by D8 or any MUST story has unresolved AC on D7",
+        "dependencies": {
+          "reuse": [
+            "Existing design system tokens (Designer P2 to map)",
+            "Existing a11y utilities in Angular base"
+          ],
+          "new": [
+            "Responsive breakpoints for 375px / 768px / 1024px",
+            "ARIA roles on ranked list (role=list, role=listitem, aria-label on balance figures)",
+            "Angular standalone <balance-dashboard> component"
+          ]
+        }
+      },
+      {
+        "id": "US-BC-004",
+        "title": "Total wealth in home currency (multi-currency aggregation)",
+        "priority": "DEFERRED",
+        "deferred_to": "follow-up sprint",
+        "deferred_reason": "OPEN-001 resolved as native-currency-only. FX rate source (BoT mid-rate vs internal treasury) is undecided. Including this story requires FX gateway ADR, rounding/dispute risk management, and at least +3 SP that are not viable in a 10-day demo sprint. RISK-001 status: mitigated by scope cut.",
+        "reopen_criteria": [
+          "FX rate source decided (stakeholder + compliance sign-off)",
+          "SA adds FX gateway to architecture ADR",
+          "BA expands story with AC covering currency conversion, rate-lock timing, and rounding rules"
+        ]
+      }
+    ],
+    "process_flows": [
+      {
+        "name": "Balance Dashboard Load — Cache Hit Path",
+        "steps": [
+          "1. Customer opens dashboard on mobile browser (authenticated session)",
+          "2. Angular <balance-dashboard> issues GET /v1/balance-dashboard with Bearer JWT",
+          "3. API Gateway validates JWT (signature, expiry, scope: accounts:read)",
+          "4. Gateway forwards request to balance-dashboard-service with X-Customer-Id from JWT sub",
+          "5. balance-dashboard-service asserts X-Customer-Id == JWT sub (IDOR guard)",
+          "6. balance-dashboard-service queries Redis: GET customer:{customerId}:accounts",
+          "7. Redis returns cached account list (includes balance_as_of per account)",
+          "8. balance-dashboard-service applies ranking: sort by balance DESC, accountId ASC tie-break",
+          "9. balance-dashboard-service emits audit event BALANCE_INQUIRY result=SUCCESS cacheHit=true (async, non-blocking)",
+          "10. balance-dashboard-service returns HTTP 200 ranked account list",
+          "11. Angular component renders dashboard: type label, masked accountNumber, formatted balance, balance_as_of relative time"
+        ],
+        "alt_paths": [
+          "JWT invalid/expired at step 3: HTTP 401, no data returned",
+          "IDOR attempt at step 5: HTTP 403, audit emitted result=FORBIDDEN, no customer B data returned",
+          "Customer has zero in-scope accounts in cache: HTTP 200 empty array, audit emitted accountCount=0"
+        ]
+      },
+      {
+        "name": "Balance Dashboard Load — Cache Miss Path",
+        "steps": [
+          "1-5. Same as cache-hit path steps 1-5",
+          "6. balance-dashboard-service queries Redis: GET customer:{customerId}:accounts — nil returned",
+          "7. balance-dashboard-service calls AccountClient.listAccountsByCustomer(customerId) — single batched call",
+          "8. AccountClient calls account-service which returns AccountInfo[] with balance_as_of from ledger-service",
+          "9. balance-dashboard-service filters: status=ACTIVE, accountType IN (SAVINGS, CURRENT, FIXED_DEPOSIT)",
+          "10. balance-dashboard-service applies ranking: sort by balance DESC, accountId ASC tie-break",
+          "11. balance-dashboard-service writes result to Redis: SET customer:{customerId}:accounts TTL=30s (includes balance_as_of)",
+          "12. balance-dashboard-service emits audit event BALANCE_INQUIRY result=SUCCESS cacheHit=false (async)",
+          "13. balance-dashboard-service returns HTTP 200 ranked account list",
+          "14. Angular component renders dashboard"
+        ],
+        "alt_paths": [
+          "Redis unavailable at step 6: fail-open, proceed as cache-miss from step 7; emit REDIS_UNAVAILABLE metric",
+          "AccountClient unavailable at step 7 after retries: HTTP 503, audit emitted result=ERROR, retry message shown to customer",
+          "balance_as_of null in AccountInfo at step 8: account still included; Last updated shows dash; observability warning emitted"
+        ]
+      }
+    ],
+    "data_requirements": [
+      {
+        "entity": "AccountInfo (REUSED — DO NOT redefine)",
+        "fields": [
+          "accountId (UUID — internal, not displayed in UI)",
+          "accountNumber (VARCHAR, masked to last 4 digits: ****XXXX — in all surfaces)",
+          "accountType (ENUM: SAVINGS | CURRENT | FIXED_DEPOSIT — only these three in scope)",
+          "balance (DECIMAL 18,2 — principal + accrued interest for FIXED_DEPOSIT per SUBDEC-001)",
+          "currency (CHAR 3 — native currency per OPEN-001)",
+          "status (ENUM: ACTIVE — only ACTIVE accounts returned)",
+          "balance_as_of (TIMESTAMP WITH TIME ZONE — from ledger, NOT row updated_at per OPEN-002)"
+        ],
+        "pii": true,
+        "pii_notes": "accountNumber is masked to last 4 digits per PDPA data minimization (money-transfer convention). balance is sensitive financial data — not in non-encrypted logs. Source DTO: docs/artifacts/S2-ba-money-transfer.json entity Account. DO NOT rebuild — reference existing AccountClient.",
+        "source": "money-transfer feature — AccountClient + AccountInfo DTO"
+      },
+      {
+        "entity": "BalanceInquiryAuditEvent (NEW — or reuse existing audit-service event schema)",
+        "fields": [
+          "eventType (VARCHAR: BALANCE_INQUIRY)",
+          "actorId (UUID — customerId from JWT sub)",
+          "purpose (VARCHAR: balance-inquiry)",
+          "channel (ENUM: MOBILE_BANKING)",
+          "correlationId (UUID — OTel traceparent)",
+          "timestamp (TIMESTAMP WITH TIME ZONE, UTC)",
+          "result (ENUM: SUCCESS | FORBIDDEN | ERROR)",
+          "accountCount (INTEGER — count of accounts returned; 0 on empty state; absent on FORBIDDEN/ERROR)",
+          "cacheHit (BOOLEAN — true if served from Redis, false if from AccountClient)"
+        ],
+        "pii": true,
+        "pii_notes": "actorId = customerId is PII. No balance values or full account numbers in audit event — data minimization. Append-only, retained 7 years per BoT. SA/TL to confirm if existing audit-service event schema covers purpose + cacheHit fields (see DEP-003 in risk-register.md).",
+        "new_work": "Confirm with SA whether new event type needed or existing schema can accommodate purpose=balance-inquiry and cacheHit fields"
+      },
+      {
+        "entity": "BalanceDashboardCacheEntry (NEW — Redis)",
+        "fields": [
+          "key: customer:{customerId}:accounts",
+          "value: JSON array of AccountInfo (accountId, masked accountNumber, accountType, balance, currency, balance_as_of)",
+          "ttl: 30 seconds",
+          "encryption: AES-256-GCM at rest (consistent with account-service)"
+        ],
+        "pii": true,
+        "pii_notes": "Cache contains balance (sensitive financial data) and masked accountNumber. Must be encrypted at rest. balance_as_of must be included so that Last updated display is accurate on cache hits."
+      }
+    ],
+    "non_functional": {
+      "performance": "p95 < 500ms server-side (warm Redis cache, 10-account fixture on staging); p95 < 800ms cold cache; AccountClient via single batched call (not N round-trips); audit emit < 200ms added overhead (async fire-and-forget)",
+      "availability": "balance-dashboard-service 99.9% rolling 30 days; fail-open on Redis unavailability; circuit breaker on AccountClient (SA/TL to configure threshold); max 2 retries with exponential backoff on AccountClient transient failures",
+      "scalability": "50 peak concurrent dashboard loads (staging baseline); stateless aggregation layer — horizontal scale via K8s HPA; Redis shared cluster (ASSUME-004); single batched AccountClient call to prevent N×load on account-service",
+      "security": "OAuth2/OIDC JWT required (scope: accounts:read); JWT sub MUST be the customerId filter — no IDOR override accepted (HTTP 403); accountNumber masked to last 4 digits in all surfaces (UI DOM, API JSON, logs, browser network); balance values not in non-encrypted logs; Redis cache encrypted at rest (AES-256-GCM); OWASP Top 10 mitigations; feature flag balance-dashboard.enabled defaults false in non-staging; early PDPA consent-coverage review at D2-D3 by banking-security (RISK-003 mitigation)",
+      "accessibility": "WCAG 2.1 AA; Lighthouse mobile a11y >= 90 (sprint demo exit criterion); ARIA roles on ranked list; aria-label on balance figures (full spoken form); keyboard Tab navigation; visible focus ring; color contrast >= 4.5:1 normal text / >= 3:1 large text; layout stable at 375px (no horizontal scroll); dynamic font scaling at 200% without clipping",
+      "observability": "OTel traceparent propagated Angular → Gateway → balance-dashboard-service → AccountClient → audit-service; structured JSON logs (correlationId, customerId, cacheHit, accountCount, durationMs, result — no balance values in logs); Prometheus metrics: balance_dashboard_requests_total, balance_dashboard_duration_ms (p95), balance_dashboard_cache_hit_ratio, balance_dashboard_audit_events_total, balance_dashboard_excluded_accounts_total; Grafana panel (new, DevOps P2); alerts: error rate > 1% / 5min, p95 > 800ms warm-cache / 5min, audit-event rate = 0 / 2min",
+      "resilience": "Redis failure: fail-open to AccountClient; AccountClient failure: HTTP 503 with Retry-After; staleness threshold 60s with may-be-stale UI indicator; graceful degradation documented (cold-cache p95 < 800ms vs warm-cache p95 < 500ms)",
+      "compliance": [
+        "PDPA (Thailand B.E. 2562): data minimization — only necessary fields returned; masked accountNumber in all surfaces; purpose-tagged audit events; consent reuse from money-transfer must be verified by banking-security at D2-D3 (RISK-003); data subject rights follow existing money-transfer policy with 7-year legal-hold override",
+        "BoT IT-Risk Guidelines: mandatory audit event on every dashboard retrieval regardless of cache state; audit records 7-year immutable retention; segregation of duties (audit-service append-only); sprint exit criterion: audit event evidence required for demo",
+        "OWASP Top 10: IDOR guard (A01), JWT validation (A07), no secrets in code (A02), input validation on customerId"
+      ]
+    },
+    "out_of_scope": [
+      "US-BC-004: Multi-currency total (FX aggregation) — DEFERRED to follow-up sprint (OPEN-001 resolved as native-currency-only)",
+      "US-BC-006: Filter / search accounts — COULD next sprint",
+      "US-BC-007: Sparkline chart of balance over time — COULD next sprint (requires historical balance store)",
+      "US-BC-008: Hide / pin specific accounts — COULD next sprint (requires user-preference service)",
+      "US-BC-009: CSV / PDF export — WON'T (reporting platform scope)",
+      "US-BC-010: Joint-account / POA support — WON'T (separate compliance epic)",
+      "US-BC-011: Push notification on balance change — WON'T (notification service scope)",
+      "Dormant/closed account display or grey-out (excluded silently per OPEN-003)",
+      "Loan account balances and credit-card balances (excluded per OPEN-004)",
+      "Event-driven cache invalidation on ledger update (deferred to next sprint — v1 is TTL-only per BR-012)",
+      "Any write or transaction operation (read-only sprint)",
+      "Native iOS/Android app (Angular web only)",
+      "New auth flow (reuse existing OAuth2/JWT)"
+    ],
+    "open_questions": [
+      "SUBDEC-001 (for SA/TL — default provided, parallel tracks not blocked): For FIXED_DEPOSIT accounts, does AccountInfo.balance from the current account-service ledger represent principal only or principal + accrued interest? BA default: principal + accrued interest as of balance_as_of. If principal-only, TL must flag to PM and add accrued-interest as a separate display field. SA to confirm in ADR before TL writes OpenAPI spec.",
+      "SUBDEC-002 (for SA/TL — parallel tracks not blocked): Does AccountClient.listAccountsByCustomer(customerId) currently exist as a single batched call returning all accounts, or does it require N individual account lookups? If N lookups, TL must add the batch endpoint to meet the p95 < 800ms cold-cache SLA. SA to confirm AccountClient API signature in ADR.",
+      "SUBDEC-003 (for SA/TL — parallel tracks not blocked): Does the existing audit-service event schema support purpose=balance-inquiry and cacheHit boolean fields, or is a new BalanceInquiry event type required? SA to resolve in ADR (see DEP-003 in risk-register.md). BA default: reuse existing schema with new field additions if schema is extensible.",
+      "SUBDEC-004 (for SA — minor, parallel tracks not blocked): Service boundary decision — should the balance-dashboard ranking + caching logic live in a new balance-dashboard-service or as a new endpoint in the existing account-service? SA owns this ADR. Process flow and AC are valid either way."
+    ],
+    "resolved_open_decisions": {
+      "OPEN-001": {
+        "question": "FX rate source for multi-currency display",
+        "decision": "Native currency only — no FX conversion",
+        "impact": "US-BC-004 officially deferred to follow-up sprint; RISK-001 status updated to mitigated by scope cut",
+        "baked_into": ["US-BC-001 AC-001-H4", "US-BC-004 deferred marker", "out_of_scope[0]"]
+      },
+      "OPEN-002": {
+        "question": "Definition of lastUpdatedAt",
+        "decision": "balance_as_of from ledger (NOT row updated_at)",
+        "impact": "All Last updated display uses ledger balance_as_of; cache payload must include balance_as_of; staleness indicator triggered when now() - balance_as_of > 60s",
+        "baked_into": ["US-BC-002 BR-009 and AC-002-H1/H2/E1/E2", "US-BC-003 BR-013 and AC-003-H4", "nfr.md section 1 staleness threshold"]
+      },
+      "OPEN-003": {
+        "question": "Dormant/closed account visibility",
+        "decision": "Hidden by default — excluded from response",
+        "impact": "Aggregation service filters status NOT IN (ACTIVE) — excluded silently; audit trail still records the access attempt; exclusion counter in observability",
+        "baked_into": ["US-BC-001 BR-003", "nfr.md section 4 PDPA+BoT intersection", "process-flow.md filter step"]
+      },
+      "OPEN-004": {
+        "question": "Which account types are in scope",
+        "decision": "SAVINGS + CURRENT + FIXED_DEPOSIT only; loan and credit-card excluded",
+        "impact": "Aggregation filter: accountType IN (SAVINGS, CURRENT, FIXED_DEPOSIT); SUBDEC-001 raised for Fixed Deposit balance composition",
+        "baked_into": ["US-BC-001 BR-004 and AC-001-H1", "US-BC-002 BR-008 and AC-002-H4", "data_requirements AccountInfo accountType field", "glossary.md In-Scope Account Types"]
+      }
+    },
+    "risk_status_updates": {
+      "RISK-001": "MITIGATED BY SCOPE CUT — US-BC-004 officially deferred; native-currency-only decision removes FX source ambiguity from this sprint",
+      "RISK-002": "OPEN — shift-left parallel tracks (SA + Designer P1 + QA P1) must fire within 1 day of BA-001 quality gate pass per PM instruction",
+      "RISK-003": "OPEN — banking-security must perform early consent-coverage review at D2-D3; consent-scope check baked into US-BC-001 BR-006 and NFR compliance section",
+      "RISK-004": "OPEN — Player must invoke SA + Designer P1 + QA P1 as a batch (not sequentially) per PM-001 shift_left_orchestration_instructions",
+      "RISK-005": "OPEN — batched AccountClient call pattern specified in US-BC-003 BR-016; QA P1 must include perf test plan with 10-account fixture by D3"
+    },
+    "artifact_references": {
+      "user_stories": "docs/ba/balance-comparison/user-stories.md",
+      "nfr": "docs/ba/balance-comparison/nfr.md",
+      "process_flow": "docs/ba/balance-comparison/process-flow.md",
+      "glossary": "docs/ba/balance-comparison/glossary.md",
+      "handoff_json": "docs/ba/balance-comparison/handoff-ba-001.json",
+      "pm_handoff": "docs/pm/balance-comparison/handoff-pm-001.json",
+      "reuse_source_ba": "docs/artifacts/S2-ba-money-transfer.json",
+      "sprint_goal": "docs/pm/balance-comparison/sprint-goal.md",
+      "risk_register": "docs/pm/balance-comparison/risk-register.md"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T10:00:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "9b1f6c4a-2d83-4b67-a410-7e5fa9d62c81",
+    "notes": "BA-001 initial. All 4 in-scope stories (US-BC-001/002/003/005) expanded with >= 3 happy + 2 edge AC each (totals: 001=7AC, 002=6AC, 003=6AC, 005=6AC = 25 total). US-BC-004 officially deferred per OPEN-001 stakeholder decision. OPEN-001..004 all resolved and baked into AC/NFR. 4 new sub-decisions surfaced for SA/TL (SUBDEC-001..004) — all have BA defaults so parallel tracks are not blocked. NFR covers performance, security, compliance (PDPA+BoT), accessibility, observability, resilience, scalability, and data minimization. RISK-001 mitigated by scope cut.",
+    "parallel_next": [
+      "banking-solution-architect",
+      "banking-designer",
+      "banking-qa"
+    ],
+    "quality_gate_self_check": {
+      "all_must_stories_have_min_3_happy_plus_2_edge": true,
+      "should_story_us_bc_005_has_min_3_happy_plus_2_edge": true,
+      "nfr_covers_performance": true,
+      "nfr_covers_security": true,
+      "nfr_covers_compliance_pdpa_bot": true,
+      "nfr_covers_accessibility_wcag_aa": true,
+      "nfr_covers_observability": true,
+      "nfr_covers_resilience": true,
+      "open_001_to_004_resolved_and_baked_in": true,
+      "us_bc_004_marked_deferred_with_rationale": true,
+      "risk_001_status_updated": true,
+      "reuse_assets_referenced_not_redefined": true,
+      "idor_guard_in_ac": true,
+      "audit_on_every_retrieval_in_ac": true,
+      "balance_as_of_from_ledger_in_ac": true,
+      "account_masking_convention_referenced": true
+    }
+  }
+}
