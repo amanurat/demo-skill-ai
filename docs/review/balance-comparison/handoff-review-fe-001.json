@@ -1,0 +1,214 @@
+{
+  "artifact_id": "9ed380f1-a7db-4b27-8d66-ab2c0fa6bb1b",
+  "from_agent": "banking-reviewer-fe",
+  "to_agent": "banking-player",
+  "phase": "REVIEW",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "changes_requested",
+    "iteration": 1,
+    "summary": "2 blockers (CSP-violating inline onerror on 2 images + JWT in localStorage), 6 majors (parseFloat on BigDecimal string, deprecated retryWhen, fragile template .replace() chain, manual pipe construction in component, console.log in production code, skeleton a11y), 5 minors, 5 nits. Design-token pipeline is correctly implemented (ADR-005 verified end-to-end). Interface contract honored — balance: string, accountId not in DOM, no FE re-sort. All 5 dashboard states tested. Estimated remediation: half-day.",
+    "findings": [
+      {
+        "id": "R-FE-001",
+        "severity": "blocker",
+        "file": "frontend/src/app/features/balance-comparison/components/empty-state/empty-state.component.html",
+        "line": 20,
+        "rule": "security: inline-event-handler / CSP",
+        "message": "<img onerror=\"this.style.display='none'\"> is an inline JS handler that will be blocked by strict CSP (script-src 'self'). Banking apps run under strict CSP — fallback breaks silently in production.",
+        "suggested_fix": "Replace with Angular (error)=\"onImgError($event)\" event binding, or hide the <img> entirely and rely on inline SVG fallback."
+      },
+      {
+        "id": "R-FE-002",
+        "severity": "blocker",
+        "file": "frontend/src/app/features/balance-comparison/components/error-retry-banner/error-retry-banner.component.html",
+        "line": 22,
+        "rule": "security: inline-event-handler / CSP",
+        "message": "Same inline onerror handler as R-FE-001 — CSP violation risk.",
+        "suggested_fix": "Replace with Angular (error) event binding."
+      },
+      {
+        "id": "R-FE-003",
+        "severity": "blocker",
+        "file": "frontend/src/app/guards/auth.guard.ts",
+        "line": 25,
+        "rule": "security: jwt-in-localstorage",
+        "message": "Guard reads JWT from localStorage (in addition to sessionStorage). Storing bearer/JWT in localStorage is an OWASP anti-pattern for banking apps — any XSS gains long-lived token access. Conflicts with the security posture of the rest of the feature (RFC 7807 errors, PII-clean copy, IBOR filter).",
+        "suggested_fix": "Remove the localStorage fallback. Prefer HttpOnly cookies for token storage; if session persistence across tabs is required, use a refresh-token flow rather than extending access-token lifetime via localStorage."
+      },
+      {
+        "id": "R-FE-004",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/pipes/balance-amount.pipe.ts",
+        "line": 37,
+        "rule": "banking: float-precision-on-balance",
+        "message": "Contract types `balance` as string to prevent IEEE-754 precision loss, but the pipe calls parseFloat(value) and uses the resulting number for both display and aria-label math. Pipe's own JSDoc says 'never parse to number for math operations' — implementation contradicts the comment.",
+        "suggested_fix": "Parse integer baht and satang directly from the string (split on '.'), format with Intl.NumberFormat on the integer part, then concatenate. Add a regression test with balance='9007199254740992.99'."
+      },
+      {
+        "id": "R-FE-005",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/services/dashboard.service.ts",
+        "line": 37,
+        "rule": "angular: deprecated-rxjs-operator",
+        "message": "retryWhen is deprecated in RxJS 7 and removed in RxJS 8. The attempt counter from mergeMap's index argument has fragile semantics — only works because exactly one error emits per attempt.",
+        "suggested_fix": "Migrate to retry({ count: 3, delay: (err, attempt) => err.status === 503 ? timer(RETRY_DELAYS_MS[attempt-1]) : throwError(()=>err) }). Add startWith({kind:'loading'}) so the loading-state test becomes non-trivial."
+      },
+      {
+        "id": "R-FE-006",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.html",
+        "line": 73,
+        "rule": "banking: fragile-template-string-manipulation",
+        "message": "balanceResult.display.replace('฿', '').replace('THB', '').trim() is a locale-fragile workaround. Intl.NumberFormat may emit 'THB 128,540.25' (en locale) or use NBSP characters that break .replace() with regular space.",
+        "suggested_fix": "Extend BalanceFormatResult with amountOnly: string emitted by the pipe; drop the .replace() chain from the template."
+      },
+      {
+        "id": "R-FE-007",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.ts",
+        "line": 67,
+        "rule": "angular: manual-pipe-construction / DI-violation",
+        "message": "buildAriaLabel() instantiates pipes with `new AccountTypeLabelPipe()` and `new BalanceAmountPipe()` on every account change — recreating Intl.NumberFormat each call. Also a DI violation: pipes should be injected, used in template, or replaced with pure utility functions.",
+        "suggested_fix": "Inject the pipes via constructor, or refactor pipe logic into pure functions, or move aria-label composition to a computed signal."
+      },
+      {
+        "id": "R-FE-008",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/containers/dashboard-page/dashboard-page.component.ts",
+        "line": 166,
+        "rule": "banking: console.log-in-prod",
+        "message": "console.log('[balance-dashboard] row selected:', account.rank) ships to production. account.rank is not PII but the eslint-disable signals the author knows this is wrong, and the next dev may reach for the full account object (which contains masked number + balance string).",
+        "suggested_fix": "Remove the console.log entirely. Add no-console: error eslint rule for this feature directory."
+      },
+      {
+        "id": "R-FE-009",
+        "severity": "major",
+        "file": "frontend/src/app/features/balance-comparison/components/loading-skeleton/loading-skeleton.component.html",
+        "line": 18,
+        "rule": "a11y: aria-hidden-on-listitem",
+        "message": "Skeleton <li> has both role='listitem' AND aria-hidden='true'. Some screen readers still announce listitem count while suppressing content — confusing during loading.",
+        "suggested_fix": "Remove role='listitem' from skeleton rows. aria-busy on parent + aria-hidden on children is the correct pattern."
+      },
+      {
+        "id": "R-FE-010",
+        "severity": "minor",
+        "file": "frontend/src/app/features/balance-comparison/models/balance-dashboard.model.ts",
+        "line": 12,
+        "rule": "contract: type-drift-vs-openapi",
+        "message": "Freshness union includes 'stale' but task-plan §Interface Contracts says v1 only has 'live' | 'snapshot' ('stale' is v1.1).",
+        "suggested_fix": "Restrict v1 Freshness to 'live' | 'snapshot', or amend task-plan + OpenAPI to admit 'stale' now. Coordinate with TL."
+      },
+      {
+        "id": "R-FE-011",
+        "severity": "minor",
+        "file": "frontend/src/app/features/balance-comparison/services/dashboard.service.spec.ts",
+        "line": 181,
+        "rule": "testing: trivially-passing-assertion",
+        "message": "'loading$ state transitions' test passes trivially because the service never emits a loading state.",
+        "suggested_fix": "After R-FE-005 (startWith loading), this becomes meaningful. Until then, rename to reflect reality."
+      },
+      {
+        "id": "R-FE-012",
+        "severity": "minor",
+        "file": "frontend/src/app/features/balance-comparison/balance-comparison.module.ts",
+        "line": 1,
+        "rule": "angular: redundant-ngmodule-with-standalone",
+        "message": "Feature is standalone, yet wrapped in NgModule + RouterModule.forChild(). app.routes.ts uses loadChildren on the module, then the module re-loads the component lazily. Double-lazy + boilerplate.",
+        "suggested_fix": "Either go full standalone (drop the module, expose BALANCE_ROUTES) or skip the inner lazy load."
+      },
+      {
+        "id": "R-FE-013",
+        "severity": "minor",
+        "file": "frontend/src/app/features/balance-comparison/components/empty-state/empty-state.component.html",
+        "line": 30,
+        "rule": "tokens: var-in-inline-svg-attribute",
+        "message": "Fallback SVG uses stroke='var(--color-primary-300)' in SVG presentation attribute — works in modern browsers but not all renderers, and bypasses currentColor pattern used elsewhere.",
+        "suggested_fix": "Use stroke='currentColor' + set color via CSS on parent container (mirrors account-row pattern)."
+      },
+      {
+        "id": "R-FE-014",
+        "severity": "minor",
+        "file": "frontend/src/app/features/balance-comparison/containers/dashboard-page/dashboard-page.component.spec.ts",
+        "line": 151,
+        "rule": "testing: cjs-require-in-typescript-spec",
+        "message": "require('@angular/router').Router and require('rxjs').Subject mix CJS with ESM imports — inconsistent, may trip strict-mode builds.",
+        "suggested_fix": "Use ESM imports at file top."
+      },
+      {
+        "id": "R-FE-015",
+        "severity": "nit",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.scss",
+        "line": 31,
+        "rule": "tokens: motion-easing-token-not-used",
+        "message": "Hardcoded cubic-bezier(0.2, 0, 0, 1) — token --motion-easing-standard has this exact value.",
+        "suggested_fix": "Replace literal with var(--motion-easing-standard) (also stale-banner, stale-badge, error-retry-banner)."
+      },
+      {
+        "id": "R-FE-016",
+        "severity": "nit",
+        "file": "frontend/src/app/features/balance-comparison/components/stale-banner/stale-banner.component.scss",
+        "line": 19,
+        "rule": "tokens: literal-border-width",
+        "message": "border-left: 4px solid … hardcodes width. No --border-width-4 token exists.",
+        "suggested_fix": "Add a token (--border-width-banner-rule: 4px) or document the intentional non-tokenized value."
+      },
+      {
+        "id": "R-FE-017",
+        "severity": "nit",
+        "file": "frontend/src/app/features/balance-comparison/components/stale-banner/stale-banner.component.scss",
+        "line": 79,
+        "rule": "tokens: rgba-literal",
+        "message": "background: rgba(120, 53, 15, 0.05) hand-derived from --color-semantic-warning-on-tint. Breaks dark-mode swap.",
+        "suggested_fix": "Use color-mix(in srgb, var(--color-semantic-warning-on-tint) 5%, transparent) or define --color-warning-hover token."
+      },
+      {
+        "id": "R-FE-018",
+        "severity": "nit",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.html",
+        "line": 11,
+        "rule": "a11y: redundant-role-listitem",
+        "message": "<li role='listitem'> — <li> already has implicit role='listitem'.",
+        "suggested_fix": "Remove explicit role='listitem' from <li>."
+      },
+      {
+        "id": "R-FE-019",
+        "severity": "nit",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.ts",
+        "line": 51,
+        "rule": "angular: unused-output",
+        "message": "@Output() rowSelect is emitted but the page handler only console.logs (R-FE-008). Either fully wire or remove until v1.1.",
+        "suggested_fix": "Remove rowSelect output and the <button> interactivity until detail page is implemented, OR navigate to a placeholder route."
+      },
+      {
+        "id": "R-FE-020",
+        "severity": "nit",
+        "file": "frontend/e2e/balance-comparison.e2e.spec.ts",
+        "line": 237,
+        "rule": "testing: brittle-keyboard-test",
+        "message": "Hardcoded 2 Tab presses to reach first account row — breaks silently if any focusable is added before the list.",
+        "suggested_fix": "Tab in a loop until focused element matches selector, or focus directly and assert via document.activeElement."
+      }
+    ],
+    "metrics_checked": {
+      "coverage_estimate": 0.85,
+      "lint": "likely_pass_with_notes",
+      "build": "not_verified",
+      "a11y_violations": 1,
+      "blocker_count": 3,
+      "major_count": 6,
+      "minor_count": 5,
+      "nit_count": 6
+    },
+    "review_report_path": "docs/review/balance-comparison/review-fe-001.md"
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": false,
+    "next_agent": "banking-refactoring",
+    "created_at": "2026-05-21T00:00:00Z",
+    "files_reviewed_count": 41,
+    "max_iterations": 3,
+    "current_iteration": 1
+  }
+}
