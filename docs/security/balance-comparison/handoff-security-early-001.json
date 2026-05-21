@@ -1,0 +1,269 @@
+{
+  "artifact_id": "be5b3dc4-6665-4d0f-917d-f57db6be8a78",
+  "from_agent": "banking-security",
+  "to_agent": "banking-player",
+  "phase": "SECURITY",
+  "feature": "balance-comparison",
+  "payload": {
+    "review_type": "early-look-consent-coverage",
+    "scope_in": [
+      "PDPA + BoT consent / lawful basis for displaying customer balances",
+      "Data minimization in proposed response shape",
+      "Audit-trail design (BoT IT-Risk requires every read recorded, including cache hit)",
+      "IDOR guard adequacy (defense-in-depth — not gateway-only)",
+      "Banking hard-rule pre-flight check (auto-fail list)"
+    ],
+    "scope_out": [
+      "Full STRIDE threat model — deferred to post-code-review gate",
+      "SAST / DAST / SCA / container scans — no code yet",
+      "OWASP ASVS L2 full traversal — deferred to full security gate"
+    ],
+    "verdict": "approved_with_conditions",
+    "lawful_basis_recommendation": {
+      "selected_basis": "PDPA Section 24(3) — performance of contract",
+      "rationale": "Balance inquiry is an inherent right of the deposit account holder under the existing customer agreement; consistent with money-transfer's documented lawful basis (contract performance); no new personal data collected; no profiling / marketing / secondary use; fresh §19 consent would be redundant and legally over-engineered.",
+      "alternatives_considered_and_rejected": [
+        "PDPA §19 fresh consent — rejected: redundant with contractual basis, UX friction",
+        "PDPA §24(5) legitimate interest — rejected: weaker than §24(3); §24(3) already covers"
+      ]
+    },
+    "purpose_limitation_check": {
+      "status": "PASS",
+      "money_transfer_purpose": "execute funds transfers + view account info to complete transfers",
+      "dashboard_purpose": "balance-inquiry (customer self-service)",
+      "verdict": "Both purposes within the same overarching deposit-account-relationship scope; no purpose-stretch",
+      "caveat": "Privacy notice text must explicitly cover 'balance inquiry via digital channels' before GA — see condition C-1"
+    },
+    "audit_trail_check": {
+      "status": "PASS",
+      "highest_risk_control": "audit on cache hit (BR-014)",
+      "highest_risk_status": "EXPLICITLY COVERED by BA — exceeds requirement",
+      "coverage": [
+        "audit on success (cache hit + cache miss)",
+        "audit on FORBIDDEN (IDOR attempt)",
+        "audit on ERROR (upstream failure)",
+        "audit on empty result (accountCount=0)",
+        "audit on excluded accounts (separate observability counter)",
+        "async fire-and-forget, < 200ms overhead, non-blocking",
+        "7-year retention inherited from audit-service",
+        "append-only / SoD inherited from audit-service"
+      ]
+    },
+    "data_minimization_check": {
+      "status": "PASS_WITH_HARDENING",
+      "response_fields_acceptable": [
+        "accountId", "accountNumber (masked ****XXXX)", "accountType (label)",
+        "balance", "currency", "balance_as_of", "rank"
+      ],
+      "explicitly_not_returned_verified": [
+        "full account number", "customer name", "customer address",
+        "account opening date", "balance history", "transaction details",
+        "loan / credit-card balances"
+      ],
+      "hardening_findings": [
+        "S-EARLY-001 (low) — audit event payload must be metadata-only (no raw balance)",
+        "S-EARLY-002 (low) — customerId in structured logs should be pseudonymized or documented as internal-only",
+        "S-EARLY-003 (info) — explicitly forbid PII in URL / query string / Prometheus metric labels"
+      ]
+    },
+    "idor_check": {
+      "status": "PASS_WITH_STRENGTHENING",
+      "enforcement_layers": [
+        "API Gateway: JWT validated, X-Customer-Id header injected from JWT sub",
+        "BDS service: assert X-Customer-Id == JWT sub (mismatch -> 403 + audit FORBIDDEN)",
+        "Service-level filter: AccountClient call derives customerId from JWT sub only"
+      ],
+      "strengthening_required": "C-3 — JWT sub is single source of truth; X-Customer-Id header is treated as untrusted input used only for mismatch detection, never for business logic or downstream calls. Pattern to be enforced via CustomerIdResolver + static analysis rule."
+    },
+    "hard_rules_preflight": {
+      "secrets_in_artifacts": "PASS — grep verified zero secrets in BA + PM docs",
+      "pii_in_logs": "MITIGATED — findings S-EARLY-001/002/003 cover audit / logs / metric labels",
+      "jwt_in_localstorage": "DEFER — FE reviewer scope",
+      "plaintext_password": "N/A — read-only",
+      "money_in_float_double": "DEFER — TL/BE; BigDecimal inherited from AccountInfo (money-transfer)",
+      "missing_audit_event": "EXCEEDS — read endpoint but BA still audits every read incl. cache hit",
+      "missing_idempotency": "N/A — read-only GET",
+      "hs256_jwt_prod": "INHERITED — money-transfer ITEM-2 mandates RS256 + Vault",
+      "tls_lt_1_2": "PASS — NFR §3 enforces TLS 1.2+",
+      "unauthenticated_customer_data_endpoint": "PASS — NFR §3 + AC-001-E3 + feature flag default false",
+      "mass_assignment": "N/A — read-only GET",
+      "no_bypass_of_audit_trail": "EXPLICITLY PASS — BR-14 forbids cache short-circuit of audit",
+      "auto_fail_triggered": false
+    },
+    "findings": [
+      {
+        "id": "S-EARLY-001",
+        "severity": "low",
+        "owasp": "n/a",
+        "regulation": "PDPA §22 (data minimization)",
+        "title": "Audit event payload must be metadata-only — no raw balance value retained for 7 years",
+        "location": "Audit event schema (process-flow.md, NFR §4)",
+        "description": "BA implies audit payload contains only metadata, but does not explicitly forbid balance/accountNumber in payload. Without explicit prohibition, implementers might include accounts[] for traceability — creating a 7-year retained balance-history honeypot.",
+        "remediation": "Make EXPLICIT in audit event JSON schema: payload contains ONLY {eventType, actorId, customerId, purpose, channel, correlationId, timestamp, result, accountCount, cacheHit}. MUST NOT include accounts[], balance, accountNumber, balance_as_of per-account, currency. Add integration test asserting payload absence of these fields.",
+        "owner": "banking-tech-lead",
+        "condition": "C-2"
+      },
+      {
+        "id": "S-EARLY-002",
+        "severity": "low",
+        "owasp": "n/a",
+        "regulation": "PDPA §22; banking-hard-rules #2",
+        "title": "customerId in structured logs — pseudonymize or document as internal-only",
+        "location": "NFR §6 Observability — structured log JSON schema",
+        "description": "BA includes customerId UUID in INFO-level structured logs. While not strictly PII (UUID is internal pseudonym), aggregation systems (Elasticsearch / Loki / Splunk) retain it as a long-lived linkable identifier consistent with money-transfer Finding S-08.",
+        "remediation": "Either (a) hash customerId for log appearance (HMAC + rotating key), keeping raw value only in audit-service events, OR (b) explicitly document customerId UUID is treated as 'internal pseudonym' acceptable in internal logs but NEVER in external-facing logs / metrics / URLs. Pick one and document in ADR.",
+        "owner": "banking-solution-architect",
+        "condition": "advisory"
+      },
+      {
+        "id": "S-EARLY-003",
+        "severity": "info",
+        "owasp": "ASVS V8.3",
+        "regulation": "PDPA §22",
+        "title": "Make explicit: no PII in URL / query string / Prometheus metric labels",
+        "location": "OpenAPI spec + Prometheus metric design (NFR §3 + §6)",
+        "description": "BA does not explicitly forbid customerId in URL path/query string or high-cardinality metric labels. Current design uses header (good) but the rule should be explicit to prevent future drift.",
+        "remediation": "Add to OpenAPI spec + metric design doc: (a) customerId MUST NOT appear in URL path or query string; (b) Prometheus metric labels MUST be low-cardinality (status, cache_hit, cache_miss_reason) — NEVER customerId / accountId values.",
+        "owner": "banking-tech-lead",
+        "condition": "advisory"
+      },
+      {
+        "id": "F-IDOR-STRENGTHEN",
+        "severity": "medium-mitigated",
+        "owasp": "A01:2021-Broken-Access-Control",
+        "regulation": "PDPA + general AppSec",
+        "title": "Make JWT sub the structurally enforced single source of truth for customerId",
+        "location": "balance-dashboard-service implementation pattern (NFR §3 + AC-001-E2)",
+        "description": "Current design has 3 enforcement layers (gateway, BDS guard, service filter). However, the BDS guard 'assert X-Customer-Id == JWT sub' must trust JWT sub as source of truth, not the header. Without a structural constraint (CustomerIdResolver bean + static analysis rule), a future PR could silently switch the source from JWT sub to header.",
+        "remediation": "C-3 — TL defines CustomerIdResolver pattern; X-Customer-Id header is only for IDOR-mismatch detection, never as the value for business logic or downstream calls. Add Spotbugs/PMD rule or unit test detecting direct request.getHeader('X-Customer-Id') outside the IDOR-check filter.",
+        "owner": "banking-tech-lead + banking-backend-dev",
+        "condition": "C-3"
+      },
+      {
+        "id": "F-PRIVACY-NOTICE",
+        "severity": "low-ga-gated",
+        "owasp": "n/a",
+        "regulation": "PDPA §23",
+        "title": "Verify customer-facing privacy notice covers 'balance inquiry via digital channels'",
+        "location": "External — customer onboarding privacy notice (compliance team scope)",
+        "description": "If onboarding privacy notice was scoped narrowly to 'transaction execution', dashboard read might be a documented-purpose stretch even though lawful basis (§24(3)) is sound. Demo on synthetic users is unaffected.",
+        "remediation": "C-1 — SA coordinates with compliance team to verify notice text. If gap found, schedule notice update BEFORE GA (post-demo). Out of agent scope to update the notice itself.",
+        "owner": "banking-solution-architect (coordinate with compliance — human-in-loop)",
+        "condition": "C-1"
+      },
+      {
+        "id": "F-REDIS-AT-REST",
+        "severity": "medium-mitigated",
+        "owasp": "A02:2021-Cryptographic-Failures",
+        "regulation": "PDPA + BoT IT-Risk",
+        "title": "Verify shared Redis cluster supports AES-256-GCM at-rest encryption",
+        "location": "Shared Redis cluster (ASSUME-004) + NFR §3",
+        "description": "BA states Redis at-rest encryption required (AES-256-GCM consistent with account-service). Need to verify the SHARED cluster actually supports it; if not, ASSUME-004 is invalidated.",
+        "remediation": "C-4 — SA + DevOps verify cluster encryption posture; if not enabled, either enable on shared cluster OR provision dedicated namespace. Document in ADR.",
+        "owner": "banking-solution-architect + banking-devops",
+        "condition": "C-4"
+      }
+    ],
+    "compliance_items_for_sa_tl": [
+      {
+        "id": "C-1",
+        "title": "Privacy notice verification (GA-gated, not demo-blocking)",
+        "owner": "banking-solution-architect",
+        "action": "Coordinate with compliance team to verify customer onboarding privacy notice explicitly covers 'balance inquiry via digital / mobile banking channels'. If gap → schedule notice update BEFORE GA.",
+        "demo_impact": "NONE — synthetic test users; not blocking sprint demo 2026-06-04"
+      },
+      {
+        "id": "C-2",
+        "title": "Audit event payload — metadata only",
+        "owner": "banking-tech-lead",
+        "action": "Make EXPLICIT in audit event JSON schema that payload contains ONLY metadata (no raw balance, no accountNumber, no balance_as_of per-account). Add integration test asserting payload absence of these fields.",
+        "demo_impact": "Must be in design before BE implementation starts"
+      },
+      {
+        "id": "C-3",
+        "title": "JWT sub = structurally enforced single source of truth for customerId",
+        "owner": "banking-tech-lead + banking-backend-dev",
+        "action": "Define CustomerIdResolver bean / static helper. X-Customer-Id header is treated as untrusted input — used only for IDOR-mismatch detection, never as the value for business logic or downstream calls. Add static-analysis rule (Spotbugs/PMD) or unit test detecting direct header usage outside the IDOR-check filter.",
+        "demo_impact": "Must be in TL implementation notes before BE coding"
+      },
+      {
+        "id": "C-4",
+        "title": "Verify Redis cluster at-rest encryption capability",
+        "owner": "banking-solution-architect + banking-devops",
+        "action": "Verify shared Redis cluster (ASSUME-004) supports AES-256-GCM at-rest encryption. If not, enable on shared cluster OR provision dedicated namespace. Document in ADR. If neither feasible, escalate (NFR §3 + ASSUME-004 invalidated).",
+        "demo_impact": "Must be verified before code touches Redis with PII cache payload"
+      }
+    ],
+    "risk_003_mitigation_status": {
+      "before_review_score": 10,
+      "before_review_status": "OPEN (likelihood=2, impact=5)",
+      "after_review_status": "MITIGATED",
+      "recommended_new_score": 4,
+      "recommended_new_likelihood": 1,
+      "recommended_new_impact": 4,
+      "rationale": "Consent reuse verified under PDPA §24(3) contractual basis (same as money-transfer); audit-trail design exceeds requirement (BR-14 audit-on-cache-hit); 4 conditions tracked for SA/TL. Likelihood drops from medium-low (assumed) to low (verified). Impact unchanged (regulatory). PM should downgrade in next risk-register update."
+    },
+    "scans": {
+      "sast": "deferred_no_code_yet",
+      "dast": "deferred_no_code_yet",
+      "sca": "deferred_no_code_yet",
+      "secrets": "pass_grep_verified_zero_secrets_in_artifacts",
+      "container": "deferred_no_image_yet"
+    },
+    "compliance": {
+      "pci_dss": {
+        "scope_affected": false,
+        "rationale": "No PAN, CVV, track data, or expiry. Service reads deposit-account balances only. Inherits money-transfer's OUT-OF-SCOPE posture.",
+        "controls_met": ["Req-3 no PAN", "Req-4 no card data in transit"]
+      },
+      "gdpr": {
+        "pii_handled": true,
+        "lawful_basis": "Contract performance (PDPA §24(3) equivalent to GDPR Art 6(1)(b))",
+        "retention": "Audit events 7 years (BoT mandated); response payload not persisted; Redis cache TTL 30s; balance data sourced from account-service / ledger-service governed by their existing retention",
+        "data_subject_rights": "Inherited — no new collection beyond money-transfer. Erasure follows existing legal-hold-override policy (7y BoT retention).",
+        "data_residency": "Thailand only (PDPA + BoT cross-border rules) — inherited K8s topology constraint from money-transfer ITEM-9"
+      },
+      "pdpa": {
+        "applicable": true,
+        "lawful_basis": "Section 24(3) — performance of contract",
+        "consent_management": "Out of scope for this service — operates under existing banking contract; consent registry handled by identity-service per PDPA §19",
+        "data_minimization": "Response shape verified minimal (NFR §8); audit / log / metric strengthening tracked via S-EARLY-001/002/003",
+        "purpose_limitation": "purpose='balance-inquiry' tagged on every audit event; within same customer-relationship scope as money-transfer"
+      },
+      "bot_it_risk": {
+        "audit_logging": "PASS — audit on every read incl. cache hit, append-only, 7y retention, async non-blocking",
+        "incident_reporting": "Inherited 1-hour BoT SLA",
+        "data_residency": "Thailand only — inherited from money-transfer K8s topology constraint",
+        "segregation_of_duties": "Inherited — ops staff cannot modify audit records"
+      }
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T11:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": null,
+    "verdict": "approved_with_conditions",
+    "conditions": [
+      "C-1: Privacy notice verification (GA-gated; not demo-blocking) — owner banking-solution-architect",
+      "C-2: Audit event payload = metadata-only (no raw balance / accountNumber) — owner banking-tech-lead",
+      "C-3: JWT sub = structurally enforced single source of truth for customerId; CustomerIdResolver pattern + static analysis rule — owner banking-tech-lead + banking-backend-dev",
+      "C-4: Verify Redis cluster supports AES-256-GCM at-rest encryption — owner banking-solution-architect + banking-devops"
+    ],
+    "review_areas_completed": [
+      "Lawful basis analysis under PDPA",
+      "Purpose limitation check vs money-transfer",
+      "BoT IT-Risk audit alignment (incl. audit-on-cache-hit verification)",
+      "Data minimization findings (response shape + audit payload + logs + metrics)",
+      "IDOR defense-in-depth + strengthening",
+      "Banking hard-rule pre-flight (11 auto-fail rules + extras)"
+    ],
+    "blocker_found": false,
+    "risk_003_status": "MITIGATED",
+    "next_security_touchpoint": "Full SAST/DAST/STRIDE gate post code-review (D9) per workflow.md — banking-security re-engaged after banking-reviewer-be + banking-reviewer-fe both approve",
+    "demo_posture": "ACCEPTABLE on synthetic test users; GA requires C-1 verification",
+    "artifact_path": "/Users/Assanai.M/mystuff/projects/demo-skill-ai/docs/security/balance-comparison/early-review-consent-coverage.md",
+    "notes": "Early-look shift-left review per RISK-003 mitigation plan. Returns to banking-player (orchestrator) — not banking-qa — because this is NOT the standard pre-QA security gate. Player should: (1) downgrade RISK-003 in risk register, (2) forward conditions C-2/C-3/C-4 to banking-solution-architect + banking-tech-lead in their respective handoffs, (3) record C-1 as post-sprint follow-up. Full STRIDE / SAST / DAST gate runs later at D9."
+  }
+}
