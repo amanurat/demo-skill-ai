@@ -1,0 +1,574 @@
+openapi: 3.0.3
+info:
+  title: Balance Dashboard Service API
+  description: |
+    Read-only aggregator for the Account Balance Comparison Dashboard.
+
+    Returns the authenticated customer's eligible accounts (ACTIVE +
+    SAVINGS/CURRENT/FIXED_DEPOSIT) ranked by balance DESC with `accountId`
+    ASC tie-break (server-side, deterministic per [ADR-004](../../sa/balance-comparison/adrs/ADR-004-server-side-ranking.md)).
+
+    ## Security model
+    - **Authentication:** OAuth2/OIDC Bearer JWT (RS256, issuer = identity-service).
+    - **Authorization:** scope `accounts:read` required.
+    - **IDOR guard (defense-in-depth):** `customerId` is derived **solely** from the
+      JWT `sub` claim by a `CustomerIdResolver` filter (see [TL ADR-006](../adrs/ADR-006-customer-id-resolver.md)).
+      The endpoint accepts **no** `customerId` parameter (path, query, body, or header)
+      by construction. Any `X-Customer-Id` header that does not match the JWT `sub`
+      results in 403 + audit `result=FORBIDDEN`. The header is treated as
+      untrusted input and is used only for mismatch detection.
+
+    ## Error envelope
+    All 4xx/5xx responses use RFC 7807 Problem Detail
+    (`application/problem+json`). Error messages are deliberately generic per
+    Security condition C-2 (see [security/early-review-consent-coverage.md §10](../../security/balance-comparison/early-review-consent-coverage.md))
+    — never include balance values, account numbers, or upstream service names.
+
+    ## Money representation
+    `balance` is a **string** carrying a BigDecimal-as-string value
+    (e.g., `"128540.25"`). JSON `number` is intentionally avoided to prevent
+    IEEE-754 precision loss in clients. Format `^-?\d+\.\d{2}$` enforced
+    by `decimal-2dp` content rule.
+  version: 1.0.0
+  contact:
+    name: Accounts Platform Team
+    url: https://wiki.bank.local/teams/accounts
+  license:
+    name: Internal — Proprietary
+
+servers:
+  - url: https://api.bank.local
+    description: Production (feature flag default false in prod until GA)
+  - url: https://api.staging.bank.local
+    description: Staging (sprint demo target)
+
+tags:
+  - name: balance-dashboard
+    description: Read-only balance comparison endpoints
+
+paths:
+  /api/v1/balance-dashboard:
+    get:
+      tags: [balance-dashboard]
+      operationId: getBalanceDashboard
+      summary: Get the authenticated customer's eligible accounts ranked by balance
+      description: |
+        Returns the authenticated customer's ACTIVE accounts of type
+        SAVINGS/CURRENT/FIXED_DEPOSIT, ranked by `balance` DESC with
+        `accountId` ASC tie-break.
+
+        - `customerId` is derived **only** from the JWT `sub` claim.
+          The endpoint takes no `customerId` parameter — by construction.
+        - On cache hit: serves the pre-ranked Redis snapshot (`X-Cache: HIT`).
+        - On cache miss: fetches via `account-service`, applies
+          `EligibilityPolicy`, ranks, writes Redis with 30s TTL.
+        - Every response (HIT, MISS, or error) emits exactly one async
+          `AuditEventRecorded v2` Kafka event (`purpose=balance-inquiry`).
+      security:
+        - bearerAuth: ['accounts:read']
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Traceparent'
+      responses:
+        '200':
+          description: Balance dashboard returned successfully (cache HIT or MISS — see `X-Cache` header)
+          headers:
+            X-Cache:
+              $ref: '#/components/headers/XCache'
+            X-Correlation-Id:
+              $ref: '#/components/headers/XCorrelationId'
+            Cache-Control:
+              schema:
+                type: string
+                example: 'private, no-store'
+              description: |
+                Always `private, no-store` — Redis is the only intentional cache;
+                downstream proxies and browsers MUST NOT cache the response
+                (PDPA — response body contains financial data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceDashboardResponse'
+              examples:
+                threeAccountsLive:
+                  $ref: '#/components/examples/ThreeAccountsLive'
+                emptyState:
+                  $ref: '#/components/examples/EmptyState'
+                snapshotWithStaleRow:
+                  $ref: '#/components/examples/SnapshotWithStaleRow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OAuth2/OIDC Bearer token (RS256 signed by identity-service).
+        Required scope: `accounts:read`.
+
+        Token claims consumed by this service:
+        - `sub` — UUID of the authenticated customer (single source of truth for `customerId`)
+        - `scope` — must contain `accounts:read`
+        - `exp` — token expiry (validated by api-gateway)
+
+  parameters:
+    AcceptLanguage:
+      in: header
+      name: Accept-Language
+      required: false
+      schema:
+        type: string
+        example: th-TH,en;q=0.8
+      description: |
+        Locale preference for any localized `displayLabel` references.
+        Defaults to `th-TH`. Note that FE owns label rendering — server
+        returns enum-stable values; this header is informational only.
+
+    Traceparent:
+      in: header
+      name: traceparent
+      required: false
+      schema:
+        type: string
+        example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+      description: |
+        W3C Trace Context header. If present, the trace ID becomes the
+        response `X-Correlation-Id`. If absent, the service generates one.
+
+  headers:
+    XCache:
+      schema:
+        type: string
+        enum: [HIT, MISS, STALE]
+      description: |
+        Cache observability marker.
+        - `HIT` — served from Redis warm cache (within 30s TTL).
+        - `MISS` — fetched from `account-service` then cached.
+        - `STALE` — last-known-good cache served while upstream CB-open
+          (deferred to v1.1 per [SA event-flows §7](../../sa/balance-comparison/event-flows.md);
+          v1 returns 503 on CB-open instead).
+
+    XCorrelationId:
+      schema:
+        type: string
+        format: uuid
+        example: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60
+      description: |
+        OpenTelemetry trace ID (without dashes is also accepted by clients).
+        Used by Support to correlate user reports with audit/log records.
+
+    RetryAfter:
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        example: 5
+      description: |
+        Seconds the client should wait before retrying. Present on 503 and 429.
+
+  schemas:
+
+    BalanceDashboardResponse:
+      type: object
+      required: [accounts, meta]
+      additionalProperties: false
+      properties:
+        accounts:
+          type: array
+          description: |
+            Eligible accounts, ranked by `balance` DESC with `accountId`
+            ASC tie-break. Always non-null; empty array is the empty state.
+            Maximum cardinality 10 in v1 (BA fixture); no pagination in v1.
+          items:
+            $ref: '#/components/schemas/AccountView'
+          maxItems: 50
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    AccountView:
+      type: object
+      description: |
+        Per-account row exposed to the customer. Field names align with
+        Designer HI-FI [component-specs.md](../../design/balance-comparison/hifi/component-specs.md)
+        and SA event-flows §2.1 cache payload shape.
+      required:
+        - rank
+        - accountId
+        - accountNumberMasked
+        - accountType
+        - balance
+        - currency
+        - balanceAsOf
+        - isStale
+        - displayLabel
+      additionalProperties: false
+      properties:
+        rank:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          description: |
+            1-based rank position. Server-side authoritative (ADR-004) —
+            FE MUST NOT re-sort. Powers ARIA `aria-label="Account {rank} of {total}"`.
+          example: 1
+        accountId:
+          type: string
+          format: uuid
+          description: |
+            Internal account UUID. Not displayed in UI per BA NFR §8.
+            Used by FE only as `@for track` key.
+          example: a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        accountNumberMasked:
+          type: string
+          description: |
+            Last 4 digits with leading asterisks. The full account number
+            never crosses the BDS boundary (already masked by `account-service`
+            per money-transfer BR-007). Format enforced by `pattern`.
+          pattern: '^\*+\d{4}$'
+          minLength: 5
+          maxLength: 20
+          example: '****7890'
+        accountType:
+          $ref: '#/components/schemas/AccountType'
+        balance:
+          type: string
+          description: |
+            BigDecimal serialized as string with exactly 2 decimal places
+            to preserve precision across JSON parsers. Currency-scaled to
+            the smallest unit of `currency` (THB = 2 dp). For
+            `accountType=FIXED_DEPOSIT` this is principal + accrued interest
+            as of `balanceAsOf` (see [ASSUMPTION-TL-001](../implementation-notes.md#assumptions)).
+          pattern: '^-?\d+\.\d{2}$'
+          minLength: 4
+          maxLength: 24
+          example: '128540.25'
+        currency:
+          type: string
+          description: ISO 4217 currency code. v1 expects `THB` only (OPEN-001 native-currency).
+          pattern: '^[A-Z]{3}$'
+          minLength: 3
+          maxLength: 3
+          example: THB
+        balanceAsOf:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 UTC timestamp of the ledger event that produced this
+            balance (sourced from `account-service`/`ledger-service`,
+            **never** from a row `updated_at` column per BR-009 / OPEN-002).
+            Used by FE to render "Last updated" and by server to compute `isStale`.
+          example: '2026-05-21T08:00:00Z'
+        isStale:
+          type: boolean
+          description: |
+            `true` when `now() - balanceAsOf > 60s` at response time
+            (server-computed per BR-013). Independent of `meta.freshness`.
+            Drives the per-row `<balance-staleness-badge>`.
+          example: false
+        displayLabel:
+          type: string
+          description: |
+            i18n key for the account type label. FE resolves via the
+            `account.*` namespace (see Designer [screen-specs §8](../../design/balance-comparison/hifi/screen-specs.md)).
+            Server returns the key only — never the rendered Thai/English string.
+          enum:
+            - account.type.savings
+            - account.type.current
+            - account.type.fixedDeposit
+          example: account.type.savings
+
+    AccountType:
+      type: string
+      description: |
+        Eligible account type per `EligibilityPolicy` (BR-004 + OPEN-004).
+        LOAN and CREDIT_CARD types are filtered out before this enum is reached.
+      enum:
+        - SAVINGS
+        - CURRENT
+        - FIXED_DEPOSIT
+      example: SAVINGS
+
+    ResponseMeta:
+      type: object
+      description: |
+        Response-level metadata. `freshness` drives the global
+        `<balance-staleness-banner>` per Designer OPEN-D-005.
+        `cacheHit` is observability-only — UI never displays it.
+      required: [freshness, cacheHit, accountCount, correlationId]
+      additionalProperties: false
+      properties:
+        freshness:
+          type: string
+          enum: [live, snapshot, stale]
+          description: |
+            - `live` — fresh fetch from `account-service` (cache MISS path), all rows fresh.
+            - `snapshot` — served from Redis cache within TTL.
+            - `stale` — degraded fallback served while upstream unhealthy
+              (v1.1 only; v1 returns 503 instead — see SA event-flows §7).
+          example: live
+        cacheHit:
+          type: boolean
+          description: |
+            `true` if response was served from Redis without an upstream call.
+            Observability + audit only — never displayed to the customer (Designer §9.3).
+          example: true
+        accountCount:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 50
+          description: |
+            Authoritative count of accounts in the response. Matches
+            `accounts.length` exactly. Audit event records this value.
+          example: 3
+        correlationId:
+          type: string
+          format: uuid
+          description: |
+            OTel trace ID (lowercase UUID form). Echoed in `X-Correlation-Id`
+            response header. Used by `<balance-error-state>` and support contact.
+          example: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60
+
+    ProblemDetail:
+      type: object
+      description: |
+        RFC 7807 Problem Detail error envelope. Generic copies only per
+        Security C-2 — never embeds balance values, account numbers, or
+        upstream service names. The `type` URI is resolvable internal
+        documentation (mandatory per banking-tech-lead skill).
+      required: [type, title, status]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI identifying the problem class. Always resolves to internal docs.
+          example: https://errors.bank.local/balance-dashboard/forbidden
+        title:
+          type: string
+          description: Short, human-readable summary. Localized via `Accept-Language` (Thai default).
+          maxLength: 128
+          example: ไม่สามารถเข้าถึงข้อมูลได้
+        status:
+          type: integer
+          format: int32
+          minimum: 400
+          maximum: 599
+          example: 403
+        detail:
+          type: string
+          description: |
+            Optional human-readable explanation. MUST be generic — no PII,
+            no balance values, no upstream service names (Security C-2).
+          maxLength: 512
+          example: คำขอนี้ไม่ได้รับอนุญาต กรุณาเข้าสู่ระบบใหม่อีกครั้ง
+        instance:
+          type: string
+          format: uri-reference
+          description: URI of the specific request occurrence (typically `/api/v1/balance-dashboard`).
+          example: /api/v1/balance-dashboard
+        correlationId:
+          type: string
+          format: uuid
+          description: OTel trace ID; safe to display to the customer for support contact.
+          example: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60
+        code:
+          type: string
+          description: |
+            Stable, machine-readable error code (alternative to `type`).
+            FE branches behavior on this — see error code taxonomy in
+            [implementation-notes.md §error-codes](../implementation-notes.md#error-code-taxonomy).
+          enum:
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - RATE_LIMIT_EXCEEDED
+            - SERVICE_UNAVAILABLE
+          example: FORBIDDEN
+
+  responses:
+
+    Unauthorized:
+      description: |
+        Missing, expired, or invalid JWT. Body is intentionally minimal.
+        Per SA event-flows §3.2 NOT audited by BDS — `api-gateway` rejects
+        before reaching BDS and has its own auth-failure audit stream.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: 'Bearer realm="bank", error="invalid_token"'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: https://errors.bank.local/balance-dashboard/unauthorized
+            title: กรุณาเข้าสู่ระบบ
+            status: 401
+            detail: เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่
+            instance: /api/v1/balance-dashboard
+            code: UNAUTHORIZED
+
+    Forbidden:
+      description: |
+        IDOR attempt detected — `X-Customer-Id` header (or any client-supplied
+        `customerId` in path/query/body) did not match JWT `sub`, OR the
+        token does not carry scope `accounts:read`, OR feature flag is OFF.
+        An audit event with `result=FORBIDDEN` is emitted. Response body
+        NEVER reveals which check failed (Security finding 5.3).
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: https://errors.bank.local/balance-dashboard/forbidden
+            title: ไม่สามารถเข้าถึงข้อมูลได้
+            status: 403
+            detail: คำขอนี้ไม่ได้รับอนุญาต
+            instance: /api/v1/balance-dashboard
+            code: FORBIDDEN
+
+    TooManyRequests:
+      description: |
+        Rate limit exceeded at `api-gateway` (60 req/min/customer per SA architecture §2).
+        Included here for client-side handling completeness; BDS itself does
+        not throttle.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: https://errors.bank.local/balance-dashboard/rate-limit
+            title: คำขอบ่อยเกินไป
+            status: 429
+            detail: กรุณาลองใหม่อีกครั้งในอีกสักครู่
+            instance: /api/v1/balance-dashboard
+            code: RATE_LIMIT_EXCEEDED
+
+    ServiceUnavailable:
+      description: |
+        `account-service` Resilience4j circuit breaker is OPEN AND no
+        cached snapshot is available to fall back on. v1 returns 503
+        directly per SA event-flows §7 (last-known-good fallback deferred
+        to v1.1). Audit event emitted with `result=ERROR`.
+        `Retry-After: 5` indicates the typical CB half-open probe interval.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/XCorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            type: https://errors.bank.local/balance-dashboard/unavailable
+            title: ไม่สามารถโหลดข้อมูลได้ในขณะนี้
+            status: 503
+            detail: กรุณาลองใหม่อีกครั้งในอีกสักครู่
+            instance: /api/v1/balance-dashboard
+            code: SERVICE_UNAVAILABLE
+
+  examples:
+
+    ThreeAccountsLive:
+      summary: Three accounts, all fresh (cache MISS)
+      description: Default screen — `balance-dashboard-default` (Designer §1)
+      value:
+        accounts:
+          - rank: 1
+            accountId: a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            accountNumberMasked: '****7890'
+            accountType: SAVINGS
+            balance: '128540.25'
+            currency: THB
+            balanceAsOf: '2026-05-21T08:00:00Z'
+            isStale: false
+            displayLabel: account.type.savings
+          - rank: 2
+            accountId: b2c3d4e5-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+            accountNumberMasked: '****1234'
+            accountType: CURRENT
+            balance: '45000.00'
+            currency: THB
+            balanceAsOf: '2026-05-21T08:00:00Z'
+            isStale: false
+            displayLabel: account.type.current
+          - rank: 3
+            accountId: c3d4e5f6-7a8b-4c9d-0e1f-2a3b4c5d6e7f
+            accountNumberMasked: '****5678'
+            accountType: FIXED_DEPOSIT
+            balance: '12500.50'
+            currency: THB
+            balanceAsOf: '2026-05-20T09:30:00Z'
+            isStale: false
+            displayLabel: account.type.fixedDeposit
+        meta:
+          freshness: live
+          cacheHit: false
+          accountCount: 3
+          correlationId: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60
+
+    EmptyState:
+      summary: Customer has zero eligible accounts
+      description: Empty screen — `balance-dashboard-empty` (Designer §3)
+      value:
+        accounts: []
+        meta:
+          freshness: live
+          cacheHit: false
+          accountCount: 0
+          correlationId: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60
+
+    SnapshotWithStaleRow:
+      summary: Cache HIT, one row past 60s staleness threshold
+      description: |
+        Stale screen — `balance-dashboard-stale` (Designer §4). The global
+        banner is driven by `meta.freshness=snapshot`; the per-row badge is
+        driven by `account.isStale=true` independently.
+      value:
+        accounts:
+          - rank: 1
+            accountId: a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            accountNumberMasked: '****7890'
+            accountType: SAVINGS
+            balance: '128540.25'
+            currency: THB
+            balanceAsOf: '2026-05-21T07:58:30Z'
+            isStale: false
+            displayLabel: account.type.savings
+          - rank: 2
+            accountId: c3d4e5f6-7a8b-4c9d-0e1f-2a3b4c5d6e7f
+            accountNumberMasked: '****5678'
+            accountType: FIXED_DEPOSIT
+            balance: '12500.50'
+            currency: THB
+            balanceAsOf: '2026-05-20T09:30:00Z'
+            isStale: true
+            displayLabel: account.type.fixedDeposit
+        meta:
+          freshness: snapshot
+          cacheHit: true
+          accountCount: 2
+          correlationId: 7f4e2b91-3a8c-4d65-9f12-1c2b3d4e5f60

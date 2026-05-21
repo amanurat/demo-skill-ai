@@ -1,0 +1,234 @@
+openapi: 3.0.3
+info:
+  title: Account Service API — `listAccountsByCustomer` Extension
+  description: |
+    **Delta spec** for the existing `account-service`. Adds one new
+    endpoint to satisfy SUBDEC-002 (see [SA service-decomposition §4](../../sa/balance-comparison/service-decomposition.md)).
+
+    The new endpoint is a single batched read. The caller
+    (`balance-dashboard-service`) applies `EligibilityPolicy`
+    (`status=ACTIVE` + `accountType IN ('SAVINGS','CURRENT','FIXED_DEPOSIT')`)
+    on the response — `account-service` returns ALL accounts owned by the
+    customer regardless of status/type so the endpoint stays reusable for
+    future consumers (statement viewer, loan dashboard).
+
+    This file specifies only the **net-new** endpoint. The full
+    account-service OpenAPI document is owned by the account-service team;
+    they MUST merge these paths/schemas into their spec by D5.
+
+    ## Backward compatibility
+    Additive only — no existing endpoint is touched. No version bump
+    required for the account-service spec (still 1.x).
+  version: 1.1.0
+  contact:
+    name: Accounts Platform Team
+    url: https://wiki.bank.local/teams/accounts
+
+servers:
+  - url: https://api.bank.local
+    description: Production
+  - url: https://api.staging.bank.local
+    description: Staging
+
+tags:
+  - name: accounts
+    description: Account read endpoints
+
+paths:
+  /api/v1/accounts:
+    get:
+      tags: [accounts]
+      operationId: listAccountsByCustomer
+      summary: List all accounts owned by a customer (batched read)
+      description: |
+        Returns every account owned by the given `customerId` regardless of
+        `status` or `accountType`. The caller is expected to filter locally
+        (see [SA service-decomposition §4](../../sa/balance-comparison/service-decomposition.md)).
+
+        ## Security
+        - JWT scope `accounts:read` required.
+        - IDOR guard: the `customerId` query parameter MUST equal the JWT
+          `sub` claim. Mismatch returns 403.
+          (Internal service-to-service calls from `balance-dashboard-service`
+          forward the original customer JWT — propagation is the caller's
+          responsibility.)
+
+        ## Idempotency
+        GET is naturally idempotent — no `Idempotency-Key` header required.
+
+        ## Cardinality
+        v1 expects N ≤ 10 in the wild (BA fixture). No pagination in v1;
+        if a customer ever exceeds 50 accounts the response is truncated
+        and a follow-up sprint will add cursor pagination.
+      security:
+        - bearerAuth: ['accounts:read']
+      parameters:
+        - in: query
+          name: customerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: |
+            Customer UUID. MUST equal JWT `sub`. Provided as a query parameter
+            for cache-key friendliness and trace clarity. The IDOR check at
+            `account-service` rejects mismatches with 403.
+          example: 11111111-2222-3333-4444-555555555555
+      responses:
+        '200':
+          description: List of accounts (may be empty). Maximum 50 items in v1.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountInfo'
+                maxItems: 50
+              examples:
+                threeAccounts:
+                  value:
+                    - accountId: a1b2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                      accountNumberMasked: '****7890'
+                      accountType: SAVINGS
+                      status: ACTIVE
+                      balance: '128540.25'
+                      currency: THB
+                      balanceAsOf: '2026-05-21T08:00:00Z'
+                    - accountId: b2c3d4e5-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+                      accountNumberMasked: '****1234'
+                      accountType: CURRENT
+                      status: ACTIVE
+                      balance: '45000.00'
+                      currency: THB
+                      balanceAsOf: '2026-05-21T08:00:00Z'
+                    - accountId: d4e5f6a7-8b9c-4d0e-1f2a-3b4c5d6e7f80
+                      accountNumberMasked: '****9999'
+                      accountType: LOAN
+                      status: ACTIVE
+                      balance: '350000.00'
+                      currency: THB
+                      balanceAsOf: '2026-05-21T08:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    AccountInfo:
+      type: object
+      description: |
+        Canonical account DTO — DO NOT REDEFINE in consuming services
+        (per SA service-decomposition §2). Source of truth lives in
+        `common-libs/account-client-lib`.
+      required:
+        - accountId
+        - accountNumberMasked
+        - accountType
+        - status
+        - balance
+        - currency
+        - balanceAsOf
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        accountNumberMasked:
+          type: string
+          pattern: '^\*+\d{4}$'
+        accountType:
+          type: string
+          description: |
+            Full account type enum. Note this includes types `LOAN` and
+            `CREDIT_CARD` which the caller (balance-dashboard-service)
+            filters out via `EligibilityPolicy`.
+          enum:
+            - SAVINGS
+            - CURRENT
+            - FIXED_DEPOSIT
+            - LOAN
+            - CREDIT_CARD
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - DORMANT
+            - CLOSED
+            - FROZEN
+            - INACTIVE
+        balance:
+          type: string
+          pattern: '^-?\d+\.\d{2}$'
+          description: |
+            BigDecimal-as-string, 2 dp. For `accountType=FIXED_DEPOSIT`
+            this is principal + accrued interest as of `balanceAsOf`
+            (per SUBDEC-001 resolution / ASSUMPTION-TL-001 — see
+            [implementation-notes §assumptions](../implementation-notes.md#assumptions)).
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        balanceAsOf:
+          type: string
+          format: date-time
+          description: |
+            ISO 8601 UTC timestamp of the ledger event that produced
+            this balance. Sourced from `ledger-service` — NEVER from a
+            row `updated_at` column (BR-009 / OPEN-002).
+
+    ProblemDetail:
+      type: object
+      description: RFC 7807 Problem Detail envelope. Generic copies only — no PII.
+      required: [type, title, status]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+          maxLength: 128
+        status:
+          type: integer
+          format: int32
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          maxLength: 512
+        instance:
+          type: string
+          format: uri-reference
+        correlationId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - FORBIDDEN
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+    Forbidden:
+      description: |
+        Token does not carry scope `accounts:read`, OR query `customerId`
+        does not match JWT `sub`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
