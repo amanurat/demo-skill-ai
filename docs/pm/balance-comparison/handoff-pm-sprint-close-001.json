@@ -1,0 +1,286 @@
+{
+  "artifact_id": "b8e4f217-5c93-4d6a-9f02-1a7c8d3e6b95",
+  "from_agent": "banking-pm",
+  "to_agent": "banking-player",
+  "phase": "SPRINT_CLOSE",
+  "feature": "balance-comparison",
+  "payload": {
+    "sprint_id": "SPRINT-2026-Q2-BC-01",
+    "sprint_window": {
+      "start": "2026-05-21",
+      "end": "2026-06-04",
+      "demo_date": "2026-06-04",
+      "close_date": "2026-05-22"
+    },
+    "dod_passed": true,
+    "dod_caveats": [
+      "Staging deploy + smoke tests = pending_infra (G10 conditional PASS)",
+      "DAST against staging = pending_infra",
+      "Load test / k6 perf baseline = absent (GAP-P2-001, NON-BLOCKING for demo, BLOCKING for production)",
+      "Product-owner human approval = pending demo on 2026-06-04"
+    ],
+    "recommendation": "ship_to_staging",
+    "production_recommendation": "do_not_promote_yet",
+    "production_gate_blockers": [
+      "GAP-P2-001 — k6 perf script + staging-validated p95 < 500ms warm / < 800ms cold",
+      "RISK-008 (was SA-RISK-002) — Apicurio v2 schema (AuditEventRecorded v2) registration",
+      "RISK-009 (was ASSUMPTION-TL-004) — Redis at-rest AES-256-GCM encryption verification",
+      "GAP-P2-004 — Testcontainers Redis-stop integration test (real Lettuce exception path)",
+      "DAST scan against running staging instance"
+    ],
+    "delivery": {
+      "stories_committed_must": ["US-BC-001", "US-BC-002", "US-BC-003"],
+      "stories_committed_stretch": ["US-BC-005"],
+      "stories_delivered": ["US-BC-001", "US-BC-002", "US-BC-003", "US-BC-005"],
+      "stories_deferred": ["US-BC-004"],
+      "story_points_committed": 7,
+      "story_points_stretch": 2,
+      "story_points_delivered": 9,
+      "team_velocity_capacity": 12,
+      "ac_coverage": "25/25 ACs across 4 delivered stories"
+    },
+    "quality_metrics": {
+      "total_tests": 170,
+      "backend_unit_tests": 55,
+      "frontend_unit_tests": 83,
+      "integration_tests": 9,
+      "contract_arch_tests": 9,
+      "e2e_tests": 14,
+      "all_tests_passing": true,
+      "unit_coverage_estimate_overall": "~87%",
+      "critical_path_coverage_estimate": ">= 95% (domain.policy, domain.audit, application.service)",
+      "mutation_kill_estimate": "~75% (PIT not executed)",
+      "review_iterations": {
+        "backend": 3,
+        "frontend": 2,
+        "max_allowed": 3,
+        "escalation_triggered": false
+      },
+      "security_findings": {
+        "blocking_resolved": ["F-1 (HIGH, CWE-532 PII in logs)", "F-2 (MEDIUM, CWE-532 missing logback filter)"],
+        "non_blocking_carry_forward": ["F-3 (JWT in sessionStorage)", "F-4 (privacy notice UI)", "F-5 (ingress rate-limit guidance)"],
+        "stride_complete": true,
+        "owasp_top_10_status": "9 pass, 1 non-blocking (A07/F-3), 1 n/a (A10)"
+      }
+    },
+    "gate_summary": [
+      {"gate": "G1 BA Completeness", "verdict": "PASS", "iteration": 1},
+      {"gate": "G2 Design LO-FI + HI-FI", "verdict": "PASS", "iteration": 1},
+      {"gate": "G3 Solution Architecture", "verdict": "PASS", "iteration": 1},
+      {"gate": "G4 TL + Impl Plan", "verdict": "PASS", "iteration": 1, "evidence": "130 test cases, 100% AC coverage"},
+      {"gate": "G5 Code Health", "verdict": "PASS", "iteration": 1, "evidence": "35+ BE tests, 55 FE files"},
+      {"gate": "G6 Code Review BE", "verdict": "PASS", "iteration": 3},
+      {"gate": "G6 Code Review FE", "verdict": "PASS", "iteration": 2},
+      {"gate": "G7 Contract Integrity", "verdict": "PASS", "iteration": 1, "evidence": "0 OpenAPI drift"},
+      {"gate": "G8 Security", "verdict": "PASS", "iteration": 2, "evidence": "F-1 and F-2 resolved"},
+      {"gate": "G9 QA P2", "verdict": "PASS", "iteration": 1, "evidence": "170 tests, 25/25 ACs"},
+      {"gate": "G9 Docs", "verdict": "PASS", "iteration": 1},
+      {"gate": "G10 Deploy", "verdict": "PASS_CONDITIONAL", "iteration": 1, "evidence": "Dockerfile + CI 10 stages + Grafana 14 panels; staging deploy pending infra"}
+    ],
+    "carry_forward_items": [
+      {
+        "id": "BC-DEBT-001",
+        "type": "tech_debt_epic",
+        "title": "balance-comparison sprint-1 carryover (tech debt)",
+        "estimated_sp": 3,
+        "items": [
+          "R-BE-205-iter2 (major) — UpstreamFailureReturns503Test should use WireMock for end-to-end Resilience4j",
+          "R-BE-206-iter2 (major) — Remove dead catch (UpstreamUnavailableException) in AccountClientAdapter",
+          "R-BE-207-iter2 (major) — Add explicit @Bean KafkaTemplate<String, AuditEventRecorded> factory",
+          "R-BE-208-iter2 (minor) — ProblemDetailAdvice correlationId use Span.current() trace ID",
+          "R-BE-209-iter2 (minor) — Schema-registry-url fallback may resolve to localhost in prod",
+          "R-BE-210-iter2 (nit) — Cascading catch RuntimeException + Exception in KafkaAuditEventPublisher",
+          "R-BE-211-iter2 (nit) — Defensive null checks in AvroMapper duplicate compact-constructor guarantees",
+          "R-BE-015..026-iter1 (minor/nit) — Various cleanup including unused BalanceSnapshot",
+          "R-FE-021 (minor) — Missing auth.service.spec.ts (~20 LOC)",
+          "R-FE-022 (nit) — JSDoc note on _authenticated signal init pattern"
+        ],
+        "owner": "banking-tech-lead",
+        "target_sprint": "next sprint (first commitment)"
+      },
+      {
+        "id": "BC-DEBT-002",
+        "type": "security_debt",
+        "title": "Migrate FE JWT storage to HttpOnly cookie + BFF",
+        "rationale": "F-3 — sessionStorage is XSS-recoverable",
+        "target": "v1.1"
+      },
+      {
+        "id": "BC-DEBT-PERF-001",
+        "type": "qa_gap",
+        "title": "k6/Gatling perf scripts at infra/k6/balance-dashboard/",
+        "rationale": "GAP-P2-001 — US-BC-003 SLA unvalidated (p95 warm < 500ms, p95 cold < 800ms, 50 VUs, 5 min, staging)",
+        "blocking_for": "production_promotion"
+      },
+      {
+        "id": "BC-DEBT-CONTRACT-001",
+        "type": "qa_gap",
+        "title": "Pact consumer-driven contract tests (FE consumer <-> BDS provider)",
+        "rationale": "GAP-P2-002 — required before independent service deployment",
+        "blocking_for": "independent_service_deployment"
+      },
+      {
+        "id": "GAP-P2-003",
+        "type": "qa_nit",
+        "title": "Assert Resilience4j TimeLimiter == 300ms in @SpringBootTest",
+        "target": "next sprint"
+      },
+      {
+        "id": "GAP-P2-004",
+        "type": "qa_gap",
+        "title": "Testcontainers Redis-stop integration test verifying fail-open via real Lettuce exception",
+        "blocking_for": "production_promotion"
+      },
+      {
+        "id": "GAP-P2-005",
+        "type": "qa_nit",
+        "title": "Dedicated unit tests for AccountView / BalanceSnapshot / RankedDashboard records",
+        "target": "next sprint"
+      },
+      {
+        "id": "OBS-042",
+        "type": "platform_debt",
+        "title": "Ship observability-lib MaskingConverter; replace inline <replace> regex in logback-spring.xml",
+        "target": "v1.1"
+      },
+      {
+        "id": "C-1",
+        "type": "compliance_debt",
+        "title": "Privacy notice / consent-withdrawal UI",
+        "target": "v1.1"
+      },
+      {
+        "id": "RISK-008",
+        "type": "infra_blocker",
+        "title": "Apicurio v2 schema (AuditEventRecorded v2) registration",
+        "plan_path": "docs/devops/balance-comparison/apicurio-schema-registration-plan.md",
+        "status": "plan_ready_execution_pending",
+        "blocking_for": "production_promotion"
+      },
+      {
+        "id": "RISK-009",
+        "type": "infra_blocker",
+        "title": "Redis at-rest AES-256-GCM encryption verification",
+        "plan_path": "docs/devops/balance-comparison/redis-cluster-verification.md",
+        "status": "checklist_ready_pending_infra_access",
+        "blocking_for": "production_promotion"
+      },
+      {
+        "id": "US-BC-004",
+        "type": "deferred_story",
+        "title": "Total wealth in home currency (FX aggregation)",
+        "reason": "OPEN-001 resolved as native-currency-only; default scope-cut plan executed",
+        "target": "follow-up sprint"
+      },
+      {
+        "id": "US-BC-006",
+        "type": "could_have",
+        "title": "Filter / search accounts",
+        "target": "next sprint candidate"
+      },
+      {
+        "id": "US-BC-007",
+        "type": "could_have",
+        "title": "Sparkline of balance over time",
+        "target": "next sprint candidate"
+      },
+      {
+        "id": "US-BC-008",
+        "type": "could_have",
+        "title": "Hide / pin specific accounts",
+        "target": "next sprint candidate"
+      }
+    ],
+    "residual_risks": [
+      {
+        "id": "RISK-005",
+        "score": 9,
+        "severity": "medium",
+        "description": "p95 < 500ms cold-cache not validated — no k6 script + no staging perf run",
+        "mitigation": "BC-DEBT-PERF-001 — must execute before production promotion",
+        "owner": "banking-tech-lead + banking-devops"
+      },
+      {
+        "id": "RISK-007",
+        "score": 12,
+        "severity": "high",
+        "description": "Staging infra not yet provisioned — blocks G10 smoke tests, DAST, and demo execution",
+        "mitigation": "Engage Platform team immediately; provision by 2026-05-31 (5-day buffer before 2026-06-04 demo)",
+        "owner": "banking-devops + Platform team",
+        "new_this_sprint": true,
+        "escalation_trigger": "Staging not provisioned by 2026-05-31"
+      },
+      {
+        "id": "RISK-008",
+        "score": 9,
+        "severity": "medium",
+        "description": "Apicurio v2 schema registration pending (was SA-RISK-002)",
+        "mitigation": "Execute apicurio-schema-registration-plan.md before prod deploy",
+        "owner": "banking-devops",
+        "new_this_sprint": true
+      },
+      {
+        "id": "RISK-009",
+        "score": 9,
+        "severity": "medium",
+        "description": "Redis at-rest AES-256-GCM encryption verification pending (was ASSUMPTION-TL-004)",
+        "mitigation": "Execute redis-cluster-verification.md checklist before prod deploy",
+        "owner": "banking-devops + Platform team",
+        "new_this_sprint": true
+      },
+      {
+        "id": "RISK-010",
+        "score": 6,
+        "severity": "medium",
+        "description": "F-3 — JWT in sessionStorage accepted for demo; XSS-recoverable if any future XSS vector is introduced",
+        "mitigation": "BC-DEBT-002 — BFF + HttpOnly cookie in v1.1",
+        "owner": "banking-frontend-dev",
+        "new_this_sprint": true
+      },
+      {
+        "id": "RISK-011",
+        "score": 6,
+        "severity": "medium",
+        "description": "Pact CDC tests absent — safe while FE+BE deploy together, breaks if independently deployed",
+        "mitigation": "BC-DEBT-CONTRACT-001 before any independent-service deployment",
+        "owner": "banking-tech-lead",
+        "new_this_sprint": true
+      }
+    ],
+    "resolved_risks": [
+      {"id": "RISK-001", "original_score": 16, "resolution": "scope_cut — US-BC-004 deferred when OPEN-001 resolved as native-currency-only"},
+      {"id": "RISK-002", "original_score": 15, "resolution": "mitigated — shift-left parallel + review-iteration ceilings respected; stretch story still delivered"},
+      {"id": "RISK-003", "original_score": 10, "resolution": "resolved — early-look security review at D2-D3 confirmed PDPA consent coverage"},
+      {"id": "RISK-004", "original_score": 12, "resolution": "resolved — Player invoked shift-left batches per PM-001; no sequential drift"},
+      {"id": "RISK-006", "original_score": 6, "resolution": "low_residual — Lighthouse a11y test plan in place; real-device run is informational"}
+    ],
+    "stakeholder_top_3_residual_risks": [
+      {"id": "RISK-007", "headline": "Staging infra must be provisioned by 2026-05-31 — escalation if Platform team cannot commit"},
+      {"id": "RISK-005", "headline": "Perf SLA p95 < 500ms is unvalidated — k6 run must precede production"},
+      {"id": "RISK-008+009", "headline": "Two pre-prod infra checks pending (Apicurio v2 schema, Redis at-rest encryption)"}
+    ],
+    "report_path": "docs/pm/balance-comparison/sprint-completion-report.md",
+    "demo_readiness": {
+      "demo_date": "2026-06-04",
+      "demo_target": "internal team demo on staging",
+      "demo_status": "GO once staging is provisioned",
+      "fallback_plan": "If staging unavailable by 2026-06-03 — demo on local dev stack with explicit disclosure of perf-not-validated, smoke-tests-not-run, DAST-not-run"
+    },
+    "next_actions_for_player": [
+      "Per-agent git commit for banking-pm sprint-close artifacts (MEMORY.md rule)",
+      "Surface residual top-3 risks to stakeholder via banking-pm stakeholder summary",
+      "Coordinate with Platform team for staging provisioning — banking-devops owns",
+      "Schedule next sprint kickoff with BC-DEBT-001 as first commitment (~3 SP)"
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-22T00:00:00Z",
+    "quality_gate_passed": true,
+    "quality_gate_id": "DoD",
+    "iteration": 1,
+    "previous_artifact_id": "9b1f6c4a-2d83-4b67-a410-7e5fa9d62c81",
+    "notes": "Sprint SPRINT-2026-Q2-BC-01 closed. All 10 quality gates (G1-G10) cleared. DoD PASS with two conditional items (staging deploy + product-owner human approval pending). 4 of 5 in-scope stories delivered; US-BC-004 deferred per default mitigation when OPEN-001 resolved as native-currency-only. 170 tests green; F-1+F-2 security blockers resolved. Recommendation: ship_to_staging; do NOT promote to production until BC-DEBT-PERF-001, RISK-008 (Apicurio v2), RISK-009 (Redis at-rest), and GAP-P2-004 (Testcontainers Redis-stop) are cleared. BC-DEBT-001 (~3 SP) is the first commitment for the next sprint. Demo on 2026-06-04 is GO contingent on staging provisioning by 2026-05-31 (RISK-007).",
+    "next_agent": "banking-player (stakeholder report distribution + per-agent commit + next sprint planning trigger)"
+  }
+}
