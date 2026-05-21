@@ -1,0 +1,303 @@
+{
+  "artifact_id": "d7a4e2c1-3b59-4f08-9a6d-1c8e0b5d4321",
+  "from_agent": "banking-designer",
+  "to_agent": "banking-designer",
+  "phase": "DISCOVERY",
+  "feature": "balance-comparison",
+  "payload": {
+    "phase_label": "Phase 1 — LO-FI Discovery complete",
+    "next_phase": "Phase 2 — HI-FI (gated on SA-001 landing)",
+    "artifact_pointers": {
+      "user_journey": "docs/design/balance-comparison/user-journey.md",
+      "wireframes_lofi": "docs/design/balance-comparison/wireframes-lofi.md",
+      "interaction_spec_lofi": "docs/design/balance-comparison/interaction-spec-lofi.md",
+      "accessibility_notes": "docs/design/balance-comparison/accessibility-notes.md",
+      "open_questions_for_hifi": "docs/design/balance-comparison/open-questions-for-hifi.md"
+    },
+    "user_journeys": [
+      {
+        "story_id": "US-BC-001",
+        "title": "List my accounts ranked by balance (descending)",
+        "entry_points": [
+          "Home tab 'บัญชีของฉัน'",
+          "Deep link from notification (out of scope)",
+          "Side-menu 'เปรียบเทียบยอดเงิน'",
+          "App re-entry after backgrounding"
+        ],
+        "steps": [
+          { "step": 1, "actor": "Customer", "action": "Tap 'บัญชีของฉัน' from authenticated home", "screen": "home (out of scope) → balance-dashboard-loading" },
+          { "step": 2, "actor": "System", "action": "Load lazy route + skeleton", "screen": "balance-dashboard-loading" },
+          { "step": 3, "actor": "System", "action": "Render ranked list (balance DESC, accountId ASC tie-break)", "screen": "balance-dashboard-default" },
+          { "step": 4, "actor": "Customer", "action": "Scan rows top-to-bottom", "screen": "balance-dashboard-default" },
+          { "step": 5, "actor": "Customer", "action": "Long-press 'Updated' label for absolute timestamp", "screen": "balance-dashboard-default" },
+          { "step": 6, "actor": "Customer", "action": "Tap a row → navigate to account detail (out of scope)", "screen": "exit" }
+        ],
+        "error_paths": [
+          { "trigger": "Zero in-scope active accounts (AC-001-E1)", "screen": "balance-dashboard-empty", "message": "ยังไม่มีบัญชีที่ใช้งานอยู่. บัญชีที่ปิดหรือไม่เคลื่อนไหวจะไม่แสดงในหน้านี้." },
+          { "trigger": "HTTP 401 expired/missing JWT (AC-001-E3)", "screen": "out-of-component (auth redirect)", "message": "Handled by app-shell auth interceptor — no in-component message" },
+          { "trigger": "HTTP 403 IDOR attempt (AC-001-E2)", "screen": "balance-dashboard-error (generic — do not disclose cause)", "message": "เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่อีกครั้ง" },
+          { "trigger": "HTTP 503 AccountClient unavailable after retries", "screen": "balance-dashboard-error", "message": "เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่อีกครั้ง (รหัสอ้างอิง: <correlationId>)" }
+        ]
+      },
+      {
+        "story_id": "US-BC-002",
+        "title": "See per-account details (type, balance, currency, last updated)",
+        "steps": [
+          { "step": 1, "actor": "Customer", "action": "View AccountRow", "screen": "balance-dashboard-default" },
+          { "step": 2, "actor": "System", "action": "Render type label (Thai), masked number (*XXXX), formatted balance with currency, relative balance_as_of", "screen": "balance-dashboard-default" }
+        ],
+        "error_paths": [
+          { "trigger": "balance_as_of older than 60s threshold (AC-002-E1)", "screen": "balance-dashboard-stale (per-row badge)", "message": "อาจไม่ใช่ยอดล่าสุด" },
+          { "trigger": "balance_as_of null/absent (AC-002-E2)", "screen": "balance-dashboard-default (row variant)", "message": "Last updated: —" }
+        ]
+      },
+      {
+        "story_id": "US-BC-003",
+        "title": "Dashboard meets p95 < 500ms for 10 accounts",
+        "steps": [
+          { "step": 1, "actor": "System", "action": "Show skeleton immediately on route entry", "screen": "balance-dashboard-loading" },
+          { "step": 2, "actor": "System", "action": "Render list on success — no skeleton flicker between renders", "screen": "balance-dashboard-default" }
+        ],
+        "error_paths": [
+          { "trigger": "Server reports meta.freshness=snapshot after fail-open (AC-003-E1, proposed contract)", "screen": "balance-dashboard-stale (global banner)", "message": "ยอดเงินอาจไม่เป็นปัจจุบัน ระบบใช้ข้อมูลล่าสุดที่บันทึกไว้" }
+        ]
+      },
+      {
+        "story_id": "US-BC-005",
+        "title": "Mobile-first responsive + accessibility WCAG 2.1 AA",
+        "steps": [
+          { "step": 1, "actor": "Customer", "action": "Open dashboard at 375px viewport", "screen": "all" },
+          { "step": 2, "actor": "Customer", "action": "Navigate with keyboard only (Tab / Shift+Tab / Enter)", "screen": "all" },
+          { "step": 3, "actor": "Customer", "action": "Use VoiceOver / TalkBack to hear ranked list", "screen": "all" },
+          { "step": 4, "actor": "Customer", "action": "Increase OS font scale to 200%", "screen": "all" }
+        ],
+        "error_paths": [
+          { "trigger": "Horizontal scroll detected at 375px", "screen": "design defect", "message": "(QA gate — must not ship)" },
+          { "trigger": "Lighthouse mobile a11y < 90", "screen": "design defect", "message": "(sprint demo exit criterion — must not ship)" }
+        ]
+      }
+    ],
+    "wireframes": [
+      {
+        "screen_id": "balance-dashboard-default",
+        "title": "Balance Dashboard — default (3-5 accounts)",
+        "layout": "single-column, mobile-first 375px",
+        "components": [
+          { "type": "PageHeader", "content": "บัญชีของฉัน + freshness subtitle (min(balance_as_of) across rows) + account count" },
+          { "type": "PullToRefreshAffordance", "label": "ดึงลงเพื่อรีเฟรช" },
+          { "type": "AccountList", "props": ["role=list", "aria-label=ranked list of accounts highest balance first"] },
+          { "type": "AccountRow", "props": ["role=listitem", "rank", "AccountTypeIcon (placeholder)", "TypeLabelTH/EN", "MaskedAccountLabel *XXXX", "BalanceAmount with aria-label spoken form", "CurrencyCode THB", "LastUpdatedLabel (relative + reveal absolute on long-press/hover)"] }
+        ],
+        "accessibility": [
+          "AccountList role=list with aria-label",
+          "AccountRow role=listitem; entire row is tap target ≥ 44dp",
+          "BalanceAmount aria-label uses full spoken form (e.g., '128,540 บาท 25 สตางค์')",
+          "Focus order = DOM order = visual rank order",
+          "Visible focus ring with ≥ 3:1 contrast (token in HI-FI)"
+        ],
+        "banking_notes": "Masked account number never exceeds last-4 (BR-007). No total / aggregate (OPEN-001). No transfer CTA on row. Tie-break (accountId ASC) is invisible by design (AC-001-H2)."
+      },
+      {
+        "screen_id": "balance-dashboard-loading",
+        "title": "Loading skeleton",
+        "layout": "single-column, mobile-first",
+        "components": [
+          { "type": "PageHeader" },
+          { "type": "AccountList", "props": ["aria-busy=true"] },
+          { "type": "SkeletonRow", "props": ["aria-hidden=true", "count=3 default", "no shimmer when prefers-reduced-motion=reduce"] }
+        ],
+        "accessibility": [
+          "aria-busy on list region — screen reader announces loading",
+          "SkeletonRow itself aria-hidden so AT is not spammed",
+          "No content layout shift between skeleton and final row"
+        ],
+        "banking_notes": "Default 3 skeleton rows — do not leak cached count (privacy). Keep skeleton up to cold-cache p95 ceiling (~800ms); do not flicker to error before that."
+      },
+      {
+        "screen_id": "balance-dashboard-empty",
+        "title": "Empty — no in-scope active accounts",
+        "layout": "centred message",
+        "components": [
+          { "type": "PageHeader" },
+          { "type": "EmptyState", "props": ["EmptyIllustration placeholder", "title=ยังไม่มีบัญชีที่ใช้งานอยู่", "subtitle explains OPEN-003 exclusion"] },
+          { "type": "PrimaryButton", "label": "เปิดบัญชีใหม่", "state": "disabled/placeholder for v1" }
+        ],
+        "accessibility": [
+          "EmptyState role=status (not alert)",
+          "Illustration alt text provided",
+          "CTA disabled state communicated via aria-disabled"
+        ],
+        "banking_notes": "Audit event STILL emitted with accountCount=0 (AC-001-E1) — UI does not gate this. Copy explicitly mentions dormant/closed exclusion to set expectations."
+      },
+      {
+        "screen_id": "balance-dashboard-stale",
+        "title": "Stale data warning (per-row badge + optional global banner)",
+        "layout": "global banner above list + per-row badge",
+        "components": [
+          { "type": "PageHeader" },
+          { "type": "StalenessBanner", "props": ["role=status", "aria-live=polite", "dismissible per session", "RetrySoftButton inline"] },
+          { "type": "AccountList" },
+          { "type": "AccountRow", "variants": ["fresh", "stale (with StaleBadge inline)"] },
+          { "type": "StaleBadge", "label": "อาจไม่ใช่ยอดล่าสุด" }
+        ],
+        "accessibility": [
+          "Banner announced once via aria-live=polite (no focus steal)",
+          "Per-row badge carries explicit Thai text, not colour-only",
+          "RetrySoftButton ≥ 44dp tap target; aria-busy while in flight"
+        ],
+        "banking_notes": "Per-row trigger: now() - balance_as_of > 60s threshold (BR-013). Global banner trigger: server signals meta.freshness=snapshot (proposed contract — see OPEN-D-005). balance_as_of null → row shows '—' (AC-002-E2)."
+      },
+      {
+        "screen_id": "balance-dashboard-error",
+        "title": "Hard error — retry",
+        "layout": "centred message + retry",
+        "components": [
+          { "type": "PageHeader" },
+          { "type": "ErrorState", "props": ["ErrorIllustration placeholder", "title=เกิดข้อผิดพลาดในการโหลดข้อมูล", "subtitle=กรุณาลองใหม่อีกครั้ง", "correlationId small-font"] },
+          { "type": "PrimaryButton", "label": "ลองใหม่" }
+        ],
+        "accessibility": [
+          "ErrorState role=alert + aria-live=assertive (announces on render)",
+          "PrimaryButton ≥ 44dp; aria-busy while retrying",
+          "correlationId is read-only text (selectable for copy)"
+        ],
+        "banking_notes": "Triggers: HTTP 5xx / 503 / network timeout. NOT 401 (auth redirects out). 403 IDOR attempt also lands here generically — DO NOT reveal cause. No bank-internal jargon."
+      },
+      {
+        "screen_id": "balance-dashboard-single",
+        "title": "Single-account state",
+        "layout": "single-column, single row",
+        "components": [
+          { "type": "PageHeader", "content": "บัญชีของฉัน + '1 account'" },
+          { "type": "PullToRefreshAffordance" },
+          { "type": "AccountList", "props": ["aria-label=your account (softened wording, not 'ranked list')"] },
+          { "type": "AccountRow", "props": ["rank visual chrome hidden; screen-reader announcement softened to 'your savings account ...'"] }
+        ],
+        "accessibility": [
+          "Screen reader does NOT announce 'Account 1 of 1' (clunky); uses softened template per interaction spec §6.1",
+          "Row still focusable and tappable (exit to detail)"
+        ],
+        "banking_notes": "Avoid 'ranking' chrome when only one row — feels awkward and adds no information."
+      },
+      {
+        "screen_id": "balance-dashboard-dense",
+        "title": "10-account density",
+        "layout": "single-column, vertical scroll only",
+        "components": [
+          { "type": "PageHeader" },
+          { "type": "PullToRefreshAffordance" },
+          { "type": "AccountList" },
+          { "type": "AccountRow", "count": 10 }
+        ],
+        "accessibility": [
+          "No horizontal scrolling at 375px even with 10 rows (BR-019, AC-005-H1)",
+          "200% font scale wraps gracefully, no clipping (AC-005-E1)",
+          "Scroll restoration on back-navigation"
+        ],
+        "banking_notes": "No sticky header in v1 (defer to HI-FI if usability flags it). Trackable per accountId for performant Angular @for rendering."
+      }
+    ],
+    "states_designed_summary": {
+      "count": 7,
+      "states": [
+        "default (3-5 accounts)",
+        "loading (skeleton)",
+        "empty (0 in-scope active accounts)",
+        "stale (per-row badge + optional global banner)",
+        "error (retry)",
+        "single-account",
+        "dense (10 accounts)"
+      ]
+    },
+    "key_interaction_decisions": [
+      "Pull-to-refresh: YES in v1 (with keyboard-reachable refresh fallback). Optional drop path if FE flags effort risk.",
+      "Sticky header: NO in v1 — keeps implementation simple.",
+      "Rank visual badges: NO — communicate rank via DOM order + screen-reader 'Account N of M' announcement.",
+      "Tie-break visual: NONE — deterministic accountId ASC sort is invisible by design (AC-001-H2).",
+      "Long-press on 'Updated' label reveals absolute timestamp (DD MMM YYYY HH:mm ICT). Hover equivalent for pointer devices.",
+      "Stale signal: per-row badge when now() - balance_as_of > 60s; global banner when server signals meta.freshness=snapshot (proposed contract — see OPEN-D-005).",
+      "Reduced-motion: skeleton has no shimmer; pull-to-refresh spring suppressed; badge fade replaced with instant appearance.",
+      "Empty-state copy explicitly mentions dormant/closed exclusion (OPEN-003) so customers understand why they see no accounts.",
+      "Error state always shows correlationId for customer-support traceability; never reveals technical cause."
+    ],
+    "open_decisions_reflected": {
+      "OPEN-001": "Native currency only — no multi-currency total widget in any wireframe; per-row currency code always present (forward-compat for future US-BC-004).",
+      "OPEN-002": "All 'Updated' labels reference balance_as_of, NEVER row updated_at. Per-row stale threshold (60s) applies to balance_as_of.",
+      "OPEN-003": "No greyed-out / hidden indicator anywhere. Empty-state copy explains the rule once.",
+      "OPEN-004": "No row templates for Loan or Credit Card. Only SAVINGS / CURRENT / FIXED_DEPOSIT labels in the type-label dictionary."
+    },
+    "accessibility_summary": {
+      "wcag_target": "2.1 AA",
+      "lighthouse_target": "mobile a11y ≥ 90 (sprint demo exit criterion)",
+      "covered_per_screen": true,
+      "tested_against_ac": [
+        "AC-005-H1 (no horizontal scroll at 375px)",
+        "AC-005-H2 (screen-reader announcement template)",
+        "AC-005-H3 (keyboard Tab order = rank order, visible focus ring)",
+        "AC-005-H4 (Lighthouse ≥ 90 — to be verified by QA on demo URL)",
+        "AC-005-E1 (200% font scale reflow)",
+        "AC-005-E2 (balance aria-label uses full spoken form)"
+      ],
+      "deferred_to_hifi": [
+        "Exact contrast ratios per token",
+        "Final focus-ring spec",
+        "Final icon set + alt-text inventory",
+        "Final i18n micro-copy keys",
+        "Colour-blindness simulations against final palette"
+      ]
+    },
+    "top_open_questions_for_hifi": [
+      "OPEN-D-001 — Design token / brand palette source (NO prior money-transfer Designer artifacts exist; needs decision in HI-FI).",
+      "OPEN-D-005 — Server signal for global 'snapshot served' freshness (proposed meta.freshness field) — requires SA-001 ADR.",
+      "OPEN-D-003 — Final Thai/English micro-copy + i18n key map (needs content-owner sign-off in HI-FI)."
+    ],
+    "phase_2_gating": {
+      "must_wait_for": "banking-solution-architect (SA-001 envelope)",
+      "rationale": "HI-FI tokens, component contracts, and meta.freshness payload shape depend on SA decisions (SUBDEC-001..004 + OPEN-D-005). Orchestrator must pause Designer Phase 2 invocation until SA-001 lands.",
+      "ready_to_start_hifi_when": [
+        "SA-001 envelope lands with quality_gate_passed=true",
+        "OPEN-D-005 (snapshot signal) resolved by SA",
+        "OPEN-D-001 (token source) decision made — by Designer in concert with TL"
+      ]
+    },
+    "handoff_notes_for_downstream": {
+      "frontend_dev_preview": "Angular standalone <balance-dashboard> component; lazy-loaded route; OnPush change detection; signals for local state; track-by accountId on @for; reactive HttpClient call. Render skeleton on initial load; do NOT use optimistic UI; wait for server. Format balance via Intl.NumberFormat('th-TH', {style:'currency', currency: 'THB'}) or Angular currency pipe. Pull-to-refresh in v1 (with refresh button as keyboard fallback). Reduced-motion query gates all animations.",
+      "tech_lead_preview": "OpenAPI response should include meta.freshness ('live'|'snapshot'|'stale') so UI can render global staleness banner — confirm in ADR (OPEN-D-005). Each account row needs: accountId, masked accountNumber (last-4 only), accountType enum (mapped to label client-side), balance (decimal 18,2), currency (ISO 4217), balance_as_of (ISO 8601 UTC). No full account number anywhere in the payload (BR-007).",
+      "qa_p1_preview": "Add a11y test cases for AC-005-H1..H4 + E1/E2 to QA P1 plan: 375px no horizontal scroll, VoiceOver/TalkBack announcement template, Tab/Shift+Tab order, Lighthouse mobile ≥ 90, 200% font reflow, balance aria-label full spoken form. Include test cases for stale-badge trigger (now() - balance_as_of > 60s) and global stale-banner (meta.freshness=snapshot).",
+      "sa_preview": "Designer Phase 1 assumes meta.freshness is exposed in the response. Please confirm or propose an alternative in SA-001 ADR. Also confirm batched AccountClient call shape so we know the response field names exactly."
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T11:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "c4e9f1b2-7a3d-4c85-b6f0-1e8d2a5c9047",
+    "notes": "Designer Phase 1 (LO-FI) complete for balance-comparison. 7 screen states wireframed (default, loading, empty, stale, error, single, dense) — exceeds the ≥6 quality-gate bar. All 4 OPEN decisions (OPEN-001..004) baked into wireframes. WCAG 2.1 AA checklist mapped to every screen. Mobile-first 375px baseline used. No prior Designer artifacts existed for money-transfer (verified) — this LO-FI is the baseline for the design system across the workspace; Phase 2 will introduce tokens. Phase 2 HI-FI is GATED on SA-001 landing (per OPEN-D-005 and OPEN-D-014).",
+    "parallel_next": [],
+    "phase_2_blocked_on": ["banking-solution-architect"],
+    "quality_gate_self_check": {
+      "min_6_screen_states_wireframed": true,
+      "screen_states_count": 7,
+      "all_us_bc_001_acs_have_screen_coverage": true,
+      "all_us_bc_002_acs_have_row_or_state_coverage": true,
+      "us_bc_003_resilience_states_covered": true,
+      "us_bc_005_a11y_mapped_to_each_screen": true,
+      "mobile_first_375px_used_as_reference": true,
+      "open_001_native_currency_only_reflected": true,
+      "open_002_balance_as_of_used_for_last_updated": true,
+      "open_003_dormant_closed_hidden_no_grey_out": true,
+      "open_004_only_three_account_types_in_design": true,
+      "masked_account_number_in_every_state": true,
+      "no_total_or_aggregate_widget": true,
+      "no_transfer_cta_on_rows": true,
+      "audit_emitted_on_every_retrieval_referenced_in_design_notes": true,
+      "deterministic_tie_break_handled_invisibly": true,
+      "reduced_motion_plan_present": true,
+      "screen_reader_template_documented": true,
+      "keyboard_focus_order_documented": true,
+      "open_questions_catalogued_with_owners_and_priorities": true,
+      "handoff_notes_for_fe_tl_qa_sa_present": true
+    }
+  }
+}
