@@ -1,0 +1,111 @@
+<!--
+  dashboard-page.component.html — DashboardPageComponent
+  Smart page. Routes all 5 states: loading | loaded | empty | error | forbidden.
+  component-specs §1, screen-specs §1-§7.
+
+  No re-sort: accounts rendered in received array order (@for preserves array order).
+  ARIA: <main> landmark, aria-labelledby="balance-page-title", <h1> per route.
+  Forbidden state shows generic "Access denied" (Security finding 5.3 — never reveal cross-customer attempt).
+-->
+<main
+  class="dashboard-page"
+  aria-labelledby="balance-page-title"
+  data-testid="dashboard-page"
+>
+
+  <!-- Loading state -->
+  @if (isLoading()) {
+    <header class="page-header" role="banner">
+      <div class="page-header__top">
+        <h1 id="balance-page-title" class="page-header__title">บัญชีของฉัน</h1>
+      </div>
+      <span class="page-header__subtitle-skeleton" aria-hidden="true"></span>
+    </header>
+    <balance-loading-skeleton
+      [rowCount]="3"
+      data-testid="loading-state"
+    ></balance-loading-skeleton>
+  }
+
+  <!-- Loaded / Stale state — accounts array rendered in RECEIVED order (no re-sort) -->
+  @if (isLoaded()) {
+    <header class="page-header" role="banner">
+      <div class="page-header__top">
+        <h1 id="balance-page-title" class="page-header__title">บัญชีของฉัน</h1>
+        <button
+          type="button"
+          class="page-header__refresh-btn"
+          aria-label="รีเฟรชยอดเงิน"
+          [disabled]="isRetrying()"
+          [attr.aria-busy]="isRetrying() ? 'true' : null"
+          (click)="onRetry()"
+          data-testid="refresh-button"
+        >
+          <!-- Heroicons outline: arrow-path -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="page-header__refresh-icon" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      </div>
+      @if (meta()) {
+        <p class="page-header__subtitle">อัปเดตล่าสุด · {{ meta()!.accountCount }} บัญชี</p>
+      }
+    </header>
+
+    <!-- Global staleness banner (freshness=snapshot/stale) -->
+    @if (showStaleBanner() && meta()) {
+      <balance-stale-banner
+        [freshness]="meta()!.freshness"
+        (retry)="onStaleBannerRetry()"
+        (dismiss)="onStaleBannerDismiss()"
+        data-testid="stale-banner-region"
+      ></balance-stale-banner>
+    }
+
+    <!-- Account list — rendered in RECEIVED order (no re-sort — task-plan constraint) -->
+    <ul
+      class="account-list"
+      role="list"
+      [attr.aria-label]="
+        accounts().length === 1
+          ? 'บัญชีของคุณ'
+          : 'รายการบัญชีของคุณ ' + accounts().length + ' รายการ เรียงจากยอดเงินมากไปน้อย'
+      "
+      data-testid="account-list"
+    >
+      @for (account of accounts(); track account.accountId) {
+        <balance-account-row
+          [account]="account"
+          [totalCount]="accounts().length"
+          (rowSelect)="onRowSelect($event)"
+          [attr.data-testid]="'account-row-item-' + account.rank"
+        ></balance-account-row>
+      }
+    </ul>
+  }
+
+  <!-- Empty state (200 with accounts=[]) -->
+  @if (isEmpty()) {
+    <balance-empty-state data-testid="empty-state-region"></balance-empty-state>
+  }
+
+  <!-- Error state (SERVICE_UNAVAILABLE after retries) -->
+  @if (isError()) {
+    <balance-error-retry-banner
+      [errorCode]="errorCode()"
+      [correlationId]="correlationId()"
+      (retry)="onRetry()"
+      data-testid="error-state-region"
+    ></balance-error-retry-banner>
+  }
+
+  <!-- Forbidden state (403 — shows generic error, no retry, no cross-customer info) -->
+  @if (isForbidden()) {
+    <balance-error-retry-banner
+      errorCode="FORBIDDEN"
+      [correlationId]="correlationId()"
+      data-testid="forbidden-state-region"
+    ></balance-error-retry-banner>
+  }
+
+</main>

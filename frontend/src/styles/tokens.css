@@ -1,0 +1,177 @@
+/* AUTO-GENERATED FROM tokens.json — DO NOT HAND-EDIT — see ADR-005 */
+
+:root {
+  /* ---- Color: Primary ---- */
+  --color-primary-50: #EEF2FB;
+  --color-primary-100: #D6DFF3;
+  --color-primary-200: #AEC0E8;
+  --color-primary-300: #7E96D5;
+  --color-primary-400: #5777C5;
+  --color-primary-500: #3B5BB8;
+  --color-primary-600: #2A4AA5;
+  --color-primary-700: #1E3A8A;
+  --color-primary-800: #162C6A;
+  --color-primary-900: #0F1F4A;
+
+  /* ---- Color: Neutral ---- */
+  --color-neutral-0: #FFFFFF;
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+
+  /* ---- Color: Semantic ---- */
+  --color-semantic-success-base: #16A34A;
+  --color-semantic-success-tint: #DCFCE7;
+  --color-semantic-success-on-base: #FFFFFF;
+  --color-semantic-success-on-tint: #14532D;
+
+  --color-semantic-danger-base: #DC2626;
+  --color-semantic-danger-tint: #FEE2E2;
+  --color-semantic-danger-on-base: #FFFFFF;
+  --color-semantic-danger-on-tint: #7F1D1D;
+
+  --color-semantic-warning-base: #D97706;
+  --color-semantic-warning-tint: #FEF3C7;
+  --color-semantic-warning-on-base: #FFFFFF;
+  --color-semantic-warning-on-tint: #78350F;
+
+  --color-semantic-info-base: #0284C7;
+  --color-semantic-info-tint: #E0F2FE;
+  --color-semantic-info-on-base: #FFFFFF;
+  --color-semantic-info-on-tint: #075985;
+
+  /* ---- Color: Surface (alias-flattened — no var() chains) ---- */
+  --color-surface-page: #F8FAFC;
+  --color-surface-card: #FFFFFF;
+  --color-surface-muted: #F1F5F9;
+  --color-surface-elevated: #FFFFFF;
+  --color-surface-overlay: rgba(15, 23, 42, 0.40);
+
+  /* ---- Color: Text (alias-flattened) ---- */
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748B;
+  --color-text-disabled: #94A3B8;
+  --color-text-inverse: #FFFFFF;
+  --color-text-link: #1E3A8A;
+  --color-text-link-hover: #162C6A;
+
+  /* ---- Color: Border (alias-flattened) ---- */
+  --color-border-subtle: #E2E8F0;
+  --color-border-default: #CBD5E1;
+  --color-border-strong: #94A3B8;
+  --color-border-focus: #1E3A8A;
+
+  /* ---- Font Family ---- */
+  --font-family-sans: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-tabular: 'Inter', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* ---- Font Weight ---- */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ---- Font Size ---- */
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 30px;
+
+  /* ---- Line Height ---- */
+  --line-height-tight: 1.2;
+  --line-height-snug: 1.4;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.6;
+
+  /* ---- Spacing ---- */
+  --spacing-0: 0px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 24px;
+  --spacing-6: 32px;
+  --spacing-7: 48px;
+  --spacing-8: 64px;
+
+  /* ---- Border Radius (alias-flattened) ---- */
+  --border-radius-none: 0px;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+  --border-radius-pill: 999px;
+  --border-radius-button: 8px;
+  --border-radius-card: 12px;
+  --border-radius-input: 8px;
+  --border-radius-badge: 999px;
+
+  /* ---- Border Width ---- */
+  --border-width-0: 0px;
+  --border-width-hairline: 1px;
+  --border-width-thick: 2px;
+  --border-width-focus: 3px;
+
+  /* ---- Breakpoints ---- */
+  --breakpoint-mobile-sm: 320px;
+  --breakpoint-mobile: 375px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1280px;
+
+  /* ---- Motion ---- */
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 120ms;
+  --motion-duration-normal: 200ms;
+  --motion-duration-slow: 320ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-decelerate: cubic-bezier(0, 0, 0, 1);
+  --motion-easing-accelerate: cubic-bezier(0.3, 0, 1, 1);
+
+  /* ---- Elevation ---- */
+  --elevation-0: none;
+  --elevation-1: 0px 1px 2px 0px rgba(15, 23, 42, 0.06);
+  --elevation-2: 0px 2px 8px 0px rgba(15, 23, 42, 0.08);
+  --elevation-3: 0px 8px 24px 0px rgba(15, 23, 42, 0.12);
+
+  /* ---- Size ---- */
+  --size-tap-min: 44px;
+  --size-row-min: 72px;
+  --size-icon-sm: 16px;
+  --size-icon-md: 20px;
+  --size-icon-lg: 24px;
+  --size-icon-xl: 32px;
+
+  /* ---- Z-index ---- */
+  --z-index-base: 0;
+  --z-index-sticky: 100;
+  --z-index-banner: 200;
+  --z-index-popover: 800;
+  --z-index-modal: 1000;
+  --z-index-toast: 1100;
+}
+
+/*
+ * Mandatory reduced-motion block (ADR-005 §2.2, accessibility-final §5).
+ * When prefers-reduced-motion: reduce is set, all motion durations → 0ms.
+ * All component transitions referencing var(--motion-duration-*) are automatically suppressed.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-normal: 0ms;
+    --motion-duration-slow: 0ms;
+    /* instant stays 0ms — already zero, but explicit for clarity */
+    --motion-duration-instant: 0ms;
+  }
+}

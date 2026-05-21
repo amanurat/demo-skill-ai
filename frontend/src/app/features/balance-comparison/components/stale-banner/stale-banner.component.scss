@@ -1,0 +1,115 @@
+/**
+ * stale-banner.component.scss — Global staleness banner.
+ * Source: component-specs §7, screen-specs §4 visual spec.
+ * All colors via var(--*).
+ */
+
+:host {
+  display: block;
+  margin: 0 var(--spacing-4) var(--spacing-3);
+}
+
+.stale-banner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-3);
+  align-items: flex-start;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--border-radius-lg);
+  border-left: 4px solid var(--color-semantic-warning-base);
+  background-color: var(--color-semantic-warning-tint);
+  transition: opacity var(--motion-duration-normal) cubic-bezier(0.0, 0.0, 0.0, 1.0);
+}
+
+.stale-banner__icon-col {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+  color: var(--color-semantic-warning-base);
+}
+
+.stale-banner__icon {
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+}
+
+.stale-banner__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.stale-banner__title {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-semantic-warning-on-tint);
+}
+
+.stale-banner__body {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-semantic-warning-on-tint);
+}
+
+.stale-banner__actions {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
+.stale-banner__retry-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-2) var(--spacing-3);
+  min-height: var(--size-tap-min);
+  border-radius: var(--border-radius-button);
+  border: 1px solid var(--color-semantic-warning-on-tint);
+  background: transparent;
+  color: var(--color-semantic-warning-on-tint);
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(120, 53, 15, 0.05);
+  }
+
+  &:focus-visible {
+    outline: var(--border-width-focus) solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+.stale-banner__dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-tap-min);
+  height: var(--size-tap-min);
+  border-radius: var(--border-radius-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: var(--border-width-focus) solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+.stale-banner__dismiss-icon {
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stale-banner {
+    transition-duration: var(--motion-duration-instant);
+  }
+}

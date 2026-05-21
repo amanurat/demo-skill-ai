@@ -1,0 +1,78 @@
+{
+  "balance-comparison": {
+    "page": {
+      "title": "My Accounts"
+    },
+    "list": {
+      "aria-label": "Your accounts, ranked highest to lowest balance",
+      "aria-label.single": "Your account",
+      "aria-label.count": "Your {{count}} accounts, ranked highest to lowest balance"
+    },
+    "lastUpdated": {
+      "justNow": "Updated just now",
+      "secondsAgo": "Updated {{n}} seconds ago",
+      "minutesAgo": "Updated {{n}} minutes ago",
+      "hoursAgo": "Updated {{n}} hours ago",
+      "daysAgo": "Updated {{n}} days ago",
+      "absolute": "Updated {{DD}} {{MMM}} {{YYYY}} {{HH}}:{{mm}}",
+      "unknown": "Last update unknown",
+      "tooltip.aria": "Long-press for full timestamp"
+    },
+    "stale": {
+      "badge": {
+        "label": "May not be the latest balance"
+      },
+      "banner": {
+        "snapshot": {
+          "title": "Balances may not be current",
+          "body": "We're showing the last saved data. Try refreshing in a moment."
+        },
+        "stale": {
+          "title": "Balances may be outdated",
+          "body": "Please refresh to get the latest data."
+        },
+        "retry": "Try again",
+        "dismiss": "Dismiss"
+      },
+      "tooltip": {
+        "aria": "Last balance update {{absoluteISO}}"
+      }
+    },
+    "empty": {
+      "title": "No active accounts to display",
+      "subtitle": "Closed or dormant accounts are not shown here.",
+      "cta": {
+        "disabled": "Open a new account"
+      },
+      "illustration": {
+        "alt": "No-accounts illustration"
+      }
+    },
+    "error": {
+      "title": "Could not load your accounts",
+      "body": "Please try again, or come back in a few minutes.",
+      "cta": {
+        "retry": "Try again"
+      },
+      "correlationLabel": "Reference: {{trace}} (for support contact)",
+      "illustration": {
+        "alt": "Error illustration"
+      }
+    },
+    "refresh": {
+      "aria": "Refresh balances",
+      "pullHint": "Pull to refresh",
+      "loading": "Loading…"
+    }
+  },
+  "account": {
+    "type": {
+      "savings": "Savings Account",
+      "current": "Current Account",
+      "fixedDeposit": "Fixed Deposit Account"
+    },
+    "masked": {
+      "endingWith": "ending {{last4}}"
+    }
+  }
+}

@@ -1,0 +1,103 @@
+/**
+ * error-retry-banner.component.scss
+ * Component-specs §15, screen-specs §5.
+ * All colors via var(--*).
+ */
+
+:host {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--spacing-4);
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+  padding-top: var(--spacing-7);
+}
+
+.error-state__illustration {
+  width: 120px;
+  height: 120px;
+  margin-bottom: var(--spacing-5);
+}
+
+.error-state__illustration-img {
+  width: 120px;
+  height: 120px;
+}
+
+.error-state__illustration-fallback {
+  width: 120px;
+  height: 120px;
+}
+
+.error-state__heading {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-4);
+  text-align: center;
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.error-state__body {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-5);
+}
+
+.error-state__retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--size-tap-min);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--border-radius-button);
+  border: none;
+  background-color: var(--color-primary-700);
+  color: var(--color-text-inverse);
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+  margin-bottom: var(--spacing-5);
+
+  &:hover {
+    background-color: var(--color-primary-500);
+  }
+
+  &:focus-visible {
+    outline: var(--border-width-focus) solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+
+  &:active {
+    background-color: var(--color-primary-800);
+  }
+}
+
+.error-state__correlation {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.error-state__correlation-value {
+  font-family: monospace;
+}

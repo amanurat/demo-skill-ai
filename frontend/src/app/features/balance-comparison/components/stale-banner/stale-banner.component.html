@@ -1,0 +1,75 @@
+<!--
+  stale-banner.component.html
+  Global staleness banner.
+  role="status" + aria-live="polite" — announces once on appearance (accessibility-final §6).
+  Hidden completely when freshness='live' (no DOM node — @if removes it).
+-->
+@if (isVisible) {
+  <div
+    class="stale-banner"
+    role="status"
+    aria-live="polite"
+    [attr.aria-labelledby]="'staleness-banner-title'"
+    data-testid="stale-banner"
+  >
+    <!-- Warning icon -->
+    <span class="stale-banner__icon-col" aria-hidden="true">
+      <!-- Heroicons outline: exclamation-triangle -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+        class="stale-banner__icon"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+        />
+      </svg>
+    </span>
+
+    <!-- Text content -->
+    <span class="stale-banner__content">
+      <span id="staleness-banner-title" class="stale-banner__title">{{ bannerTitle }}</span>
+      <span class="stale-banner__body">{{ bannerBody }}</span>
+    </span>
+
+    <!-- Actions -->
+    <span class="stale-banner__actions">
+      <button
+        type="button"
+        class="stale-banner__retry-btn"
+        (click)="onRetry()"
+        data-testid="stale-banner-retry"
+      >
+        ลองอีกครั้ง
+      </button>
+      <button
+        type="button"
+        class="stale-banner__dismiss-btn"
+        aria-label="ปิดข้อความ"
+        (click)="onDismiss()"
+        data-testid="stale-banner-dismiss"
+      >
+        <!-- Heroicons outline: x-mark -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="stale-banner__dismiss-icon"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </span>
+  </div>
+}

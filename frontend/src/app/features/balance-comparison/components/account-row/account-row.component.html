@@ -1,0 +1,82 @@
+<!--
+  account-row.component.html
+  Single account row — presentational.
+  ARIA: role="listitem" + <button> for full-row tap target (component-specs §4).
+  Icon: aria-hidden="true" (decorative — type label carries semantic meaning).
+  Balance: aria-label on amount span (AC-005-E2).
+  accountId: NOT rendered anywhere (BA NFR §8).
+-->
+<li
+  class="account-row"
+  role="listitem"
+  [attr.data-testid]="'account-row-' + account.rank"
+>
+  <button
+    type="button"
+    class="account-row__button"
+    [attr.aria-label]="composedAriaLabel"
+    (click)="onSelect()"
+  >
+    <!-- Icon column -->
+    <span class="account-row__icon-col" aria-hidden="true">
+      @switch (account.accountType) {
+        @case ('SAVINGS') {
+          <!-- Heroicons outline: banknotes -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="account-type-icon" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+          </svg>
+        }
+        @case ('CURRENT') {
+          <!-- Heroicons outline: credit-card -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="account-type-icon" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+          </svg>
+        }
+        @case ('FIXED_DEPOSIT') {
+          <!-- Heroicons outline: lock-closed -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="account-type-icon" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+          </svg>
+        }
+      }
+    </span>
+
+    <!-- Info column -->
+    <span class="account-row__info-col">
+      <span class="account-row__type-label" data-testid="account-type-label">
+        {{ account.accountType | accountTypeLabel:'th' }}
+      </span>
+      <span
+        class="account-row__masked-number"
+        [attr.aria-label]="'ลงท้ายด้วย ' + account.accountNumberMasked.slice(-4)"
+        data-testid="masked-account-number"
+      >{{ account.accountNumberMasked }}</span>
+      <span class="account-row__last-updated" data-testid="last-updated">
+        {{ buildRelativeTime(account.balanceAsOf) }}
+      </span>
+      @if (account.isStale) {
+        <balance-stale-badge
+          [lastUpdatedAbsolute]="account.balanceAsOf ?? ''"
+          data-testid="stale-badge"
+        ></balance-stale-badge>
+      }
+    </span>
+
+    <!-- Balance column -->
+    <span class="account-row__balance-col">
+      @let balanceResult = account.balance | balanceAmount;
+      <span
+        class="account-row__balance-amount"
+        [attr.aria-label]="balanceResult.ariaLabel"
+        data-testid="balance-amount"
+      >
+        <span aria-hidden="true">฿</span>{{ balanceResult.display.replace('฿', '').replace('THB', '').trim() }}
+      </span>
+      <span
+        class="account-row__currency"
+        aria-hidden="true"
+        data-testid="currency-code"
+      >{{ account.currency }}</span>
+    </span>
+  </button>
+</li>

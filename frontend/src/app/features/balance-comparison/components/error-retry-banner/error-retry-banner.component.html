@@ -1,0 +1,71 @@
+<!--
+  error-retry-banner.component.html
+  Hard error screen.
+  role="alert" + aria-live="assertive" — interrupts politely (accessibility-final §6).
+  Security C-2: no service names, no balance values, no account numbers in copy.
+  correlationId shown only for support contact.
+-->
+<div
+  class="error-state"
+  role="alert"
+  aria-live="assertive"
+  data-testid="error-retry-banner"
+>
+  <!-- Error illustration -->
+  <div class="error-state__illustration" aria-hidden="true">
+    <img
+      src="assets/images/error-illustration.svg"
+      alt="ภาพประกอบเกิดข้อผิดพลาด"
+      class="error-state__illustration-img"
+      width="120"
+      height="120"
+      onerror="this.style.display='none'"
+    />
+    <!-- Fallback inline SVG -->
+    <svg
+      class="error-state__illustration-fallback"
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <circle cx="60" cy="60" r="50" stroke="var(--color-semantic-danger-base)" stroke-width="2" fill="none" stroke-dasharray="8 4"/>
+      <path d="M60 35 L60 65" stroke="var(--color-semantic-danger-base)" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="60" cy="78" r="4" fill="var(--color-semantic-danger-base)"/>
+    </svg>
+  </div>
+
+  <!-- Heading — programmatic focus on entry -->
+  <h2
+    #headingRef
+    class="error-state__heading"
+    tabindex="-1"
+    data-testid="error-heading"
+  >
+    {{ headingText }}
+  </h2>
+
+  <p class="error-state__body" data-testid="error-body">
+    {{ bodyText }}
+  </p>
+
+  <!-- Retry button — only shown for retryable errors (not FORBIDDEN) -->
+  @if (isRetryable) {
+    <button
+      type="button"
+      class="error-state__retry-btn"
+      (click)="onRetry()"
+      data-testid="error-retry-btn"
+    >
+      ลองใหม่
+    </button>
+  }
+
+  <!-- Correlation ID — OTel trace for support contact. NEVER PII. -->
+  @if (correlationId) {
+    <p class="error-state__correlation" data-testid="correlation-id">
+      รหัสอ้างอิง: <span class="error-state__correlation-value">{{ correlationId }}</span>
+      (สำหรับติดต่อทีมงาน)
+    </p>
+  }
+</div>

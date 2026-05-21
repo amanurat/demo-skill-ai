@@ -1,0 +1,73 @@
+/**
+ * empty-state.component.scss
+ * Component-specs §8, screen-specs §3.
+ * All colors via var(--*).
+ */
+
+:host {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--spacing-4);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+  padding-top: var(--spacing-7);
+}
+
+.empty-state__illustration {
+  width: 120px;
+  height: 120px;
+  margin-bottom: var(--spacing-5);
+  position: relative;
+}
+
+.empty-state__illustration-img {
+  width: 120px;
+  height: 120px;
+}
+
+.empty-state__illustration-fallback {
+  width: 120px;
+  height: 120px;
+}
+
+.empty-state__heading {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-4);
+
+  /* Programmatic focus — hide visible ring (heading is not interactive) */
+  &:focus {
+    outline: none;
+  }
+}
+
+.empty-state__subtitle {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-5);
+}
+
+.empty-state__cta-disabled {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+  /* Styled to look button-like but semantically non-interactive */
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--border-radius-button);
+  border: 1px solid currentColor;
+}

@@ -1,0 +1,125 @@
+/**
+ * account-row.component.scss
+ * All colors/spacing MUST use var(--*) CSS custom properties (ADR-005 §2.5).
+ * No inline hex colors. No $scss-vars for runtime values.
+ */
+
+:host {
+  display: block;
+}
+
+.account-row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-surface-card);
+  border-bottom: var(--border-width-hairline) solid var(--color-border-subtle);
+}
+
+.account-row__button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-3);
+  align-items: flex-start;
+  width: 100%;
+  min-height: var(--size-row-min);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--motion-duration-fast) cubic-bezier(0.2, 0, 0, 1);
+
+  &:hover {
+    background-color: var(--color-neutral-50);
+  }
+
+  &:focus-visible {
+    outline: var(--border-width-focus) solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+
+  &:active {
+    background-color: var(--color-neutral-100);
+  }
+}
+
+.account-row__icon-col {
+  display: flex;
+  align-items: center;
+  padding-top: var(--spacing-1);
+  color: var(--color-text-secondary);
+}
+
+.account-type-icon {
+  width: 1.5rem; /* 24px — component-specs §5 size.icon_lg */
+  height: 1.5rem;
+  stroke: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.account-row__info-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.account-row__type-label {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+}
+
+.account-row__masked-number {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+.account-row__last-updated {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+
+.account-row__balance-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-1);
+}
+
+.account-row__balance-amount {
+  font-family: var(--font-family-tabular);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.account-row__currency {
+  font-family: var(--font-family-sans);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Reduced motion — swap transition to instant (ADR-005, accessibility-final §5) */
+@media (prefers-reduced-motion: reduce) {
+  .account-row__button {
+    transition-duration: var(--motion-duration-instant);
+  }
+}

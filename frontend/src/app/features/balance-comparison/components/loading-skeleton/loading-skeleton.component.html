@@ -1,0 +1,36 @@
+<!--
+  loading-skeleton.component.html
+  aria-busy="true" on list region (screen-specs §2).
+  Skeleton rows individually aria-hidden="true" — busy state on parent carries load.
+  No shimmer (OPEN-D-009 resolution — static placeholder only).
+-->
+<ul
+  class="skeleton-list"
+  role="list"
+  aria-busy="true"
+  aria-label="กำลังโหลดข้อมูลบัญชี"
+  data-testid="loading-skeleton"
+>
+  @for (row of rows; track row) {
+    <li
+      class="skeleton-row"
+      aria-hidden="true"
+      role="listitem"
+      data-testid="skeleton-row"
+    >
+      <!-- Icon placeholder -->
+      <span class="skeleton-row__icon-ph"></span>
+      <!-- Info column placeholders -->
+      <span class="skeleton-row__info-col">
+        <span class="skeleton-bar skeleton-bar--label"></span>
+        <span class="skeleton-bar skeleton-bar--number"></span>
+        <span class="skeleton-bar skeleton-bar--updated"></span>
+      </span>
+      <!-- Balance column placeholder -->
+      <span class="skeleton-row__balance-col">
+        <span class="skeleton-bar skeleton-bar--amount"></span>
+        <span class="skeleton-bar skeleton-bar--currency"></span>
+      </span>
+    </li>
+  }
+</ul>

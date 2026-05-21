@@ -1,0 +1,69 @@
+/**
+ * loading-skeleton.component.scss
+ * Static skeleton (no shimmer per LO-FI commitment + OPEN-D-009).
+ * Mirrors AccountRow dimensions to prevent CLS.
+ * All colors via var(--*).
+ */
+
+:host {
+  display: block;
+}
+
+.skeleton-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-3);
+  align-items: flex-start;
+  min-height: var(--size-row-min);
+  padding: var(--spacing-3) var(--spacing-4);
+  background-color: var(--color-surface-card);
+  border-bottom: var(--border-width-hairline) solid var(--color-border-subtle);
+  border-radius: var(--border-radius-card);
+}
+
+.skeleton-row__icon-ph {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--border-radius-md);
+  background-color: var(--color-neutral-100);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.skeleton-row__info-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.skeleton-row__balance-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-2);
+}
+
+.skeleton-bar {
+  display: block;
+  background-color: var(--color-neutral-100);
+  border-radius: var(--border-radius-sm);
+
+  /* No animation — static per OPEN-D-009 */
+  animation: none;
+}
+
+/* Widths per screen-specs §2 visual spec */
+.skeleton-bar--label   { width: 40%; height: 16px; }
+.skeleton-bar--number  { width: 70%; height: 24px; }
+.skeleton-bar--updated { width: 30%; height: 14px; }
+.skeleton-bar--amount  { width: 80px; height: 24px; }
+.skeleton-bar--currency{ width: 28px; height: 14px; }

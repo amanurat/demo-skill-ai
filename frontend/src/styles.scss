@@ -1,0 +1,20 @@
+/**
+ * styles.scss — Global stylesheet entry point.
+ * Import order LOCKED by ADR-005 §2.4.
+ * MUST be: tokens.scss → tokens.css → reset → typography-base → utilities
+ */
+
+// 1. Compile-time SCSS variables (breakpoints for @media queries)
+@import 'styles/tokens';
+
+// 2. Runtime CSS custom properties (:root --vars, dark-mode swap point)
+@import 'styles/tokens.css';
+
+// 3. Reset
+@import 'styles/reset';
+
+// 4. Typography base
+@import 'styles/typography-base';
+
+// 5. Utilities
+@import 'styles/utilities';
