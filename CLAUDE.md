@@ -51,14 +51,18 @@ All agents live under [.claude/agents/](.claude/agents/). Trigger them via Task 
 | 3 | [`banking-designer`](.claude/agents/banking-designer.md) | UX/UI Designer | Designer | Phase 1: LO-FI after BA · Phase 2: HI-FI after SA (parallel with SA) |
 | 4 | [`banking-solution-architect`](.claude/agents/banking-solution-architect.md) | Solution Architect | Solution Architect | User stories → service map + tech decisions (parallel with Designer) |
 | 5 | [`banking-tech-lead`](.claude/agents/banking-tech-lead.md) | Tech Lead | Technical Lead | Architecture + HI-FI design → OpenAPI + DB schema + ADRs |
-| 6 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | Developer | API contract + design spec → UI implementation |
-| 7 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | Developer | API contract → microservice implementation |
-| 8 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Technical Lead | Angular artifacts → parallel review with BE reviewer |
-| 9 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Technical Lead | Spring Boot artifacts → parallel review with FE reviewer |
-| 10 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | DevSecOps | After both reviewers approve → security review + audit |
-| 11 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | TQA | Phase 1 (shift-left): test plan after BA · Phase 2: automation after security |
-| 12 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | DevSecOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA |
-| 13 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Technical Lead | Single-stack PRs or when FE+BE split is not needed |
+| 6 | [`banking-implementation-planner`](.claude/agents/banking-implementation-planner.md) | Implementation Planner | Technical Lead | **After TL, before dev** — task decomposition, test-coverage map, interface contracts. Mandatory gate before coding starts. |
+| 7 | [`banking-frontend-dev`](.claude/agents/banking-frontend-dev.md) | Angular Dev | Developer | After Planner — UI implementation (5-step sequential TDD: API client → State → Dumb → Smart → Routing) |
+| 8 | [`banking-backend-dev`](.claude/agents/banking-backend-dev.md) | Spring Boot Dev | Developer | After Planner — microservice implementation (6-step sequential TDD: Domain → Repo → Service → Infra → Controller → Tests) |
+| 9 | [`banking-reviewer-fe`](.claude/agents/banking-reviewer-fe.md) | Frontend Reviewer | Technical Lead | Angular artifacts → parallel review with BE reviewer |
+| 10 | [`banking-reviewer-be`](.claude/agents/banking-reviewer-be.md) | Backend Reviewer | Technical Lead | Spring Boot artifacts → parallel review with FE reviewer |
+| 11 | [`banking-refactoring`](.claude/agents/banking-refactoring.md) | Refactoring Specialist | Technical Lead | **Only when reviewer returns `changes_requested`** — applies targeted fixes, loops back to reviewer (max 3 iterations) |
+| 12 | [`banking-security`](.claude/agents/banking-security.md) | AppSec / Compliance | DevSecOps | After both reviewers approve → STRIDE + SAST/DAST + compliance (parallel with Integration) |
+| 13 | [`banking-integration`](.claude/agents/banking-integration.md) | Integration Validator | Technical Lead | **After both reviewers approve, parallel with Security** — FE↔BE contract tests, OpenAPI drift check, smoke tests |
+| 14 | [`banking-qa`](.claude/agents/banking-qa.md) | QA Automation | TQA | Phase 1 (shift-left): test plan after BA · Phase 2: full automation after security + integration (parallel with Docs) |
+| 15 | [`banking-docs`](.claude/agents/banking-docs.md) | Documentation | Technical Writer | **After security + integration approve, parallel with QA P2** — API reference, CHANGELOG, developer guide, ADR index |
+| 16 | [`banking-devops`](.claude/agents/banking-devops.md) | DevOps | DevSecOps | Phase 1 (shift-left): CI/CD skeleton after TL · Phase 2: full deploy after QA + Docs both complete |
+| 17 | [`banking-reviewer`](.claude/agents/banking-reviewer.md) | Principal Engineer (generic) | Technical Lead | Single-stack PRs or when FE+BE split is not needed |
 
 ### Meta / Platform Role (runtime, not a team role)
 
@@ -68,7 +72,7 @@ All agents live under [.claude/agents/](.claude/agents/). Trigger them via Task 
 
 ---
 
-## 🔄 Optimized Forward Flow (PM-driven + Parallel + Shift-Left)
+## 🔄 Optimized Forward Flow (PM-driven + Parallel + Shift-Left + TDD)
 
 ```
 User intent
@@ -78,24 +82,37 @@ User intent
 [banking-player] ← runtime orchestrator (not shown as a node — it routes everything)
     ↓
 [banking-ba] → user stories, AC
-    ↓               ↓                    ↘ shift-left
-[banking-sa]  [banking-designer P1]    [banking-qa P1] — test plan
+    ↓               ↓                       ↘ shift-left
+[banking-sa]  [banking-designer P1]    [banking-qa P1] — test plan from AC
     ↓               ↓
 [banking-designer P2 — HI-FI]
     ↓
-[banking-tech-lead] → OpenAPI + DB schema + design tokens
-    ↓                    ↓                   ↘ shift-left
-[banking-frontend-dev]  [banking-backend-dev] [banking-devops P1] — CI/CD skeleton
-    ↓                            ↓
+[banking-tech-lead] → OpenAPI + DB schema + ADRs + impl-notes
+    ↓                                          ↘ shift-left
+[banking-implementation-planner]          [banking-devops P1] — CI/CD skeleton
+→ task-plan.md: BE layers, FE steps,
+  AC→test map, interface contracts         ← quality gate G4
+    ↓ (parallel)
+[banking-frontend-dev]      [banking-backend-dev]
+(5-step sequential TDD)     (6-step sequential TDD)
+  Client→State→Dumb           Domain→Repo→Service
+  →Smart→Routing              →Infra→Controller→Tests
+    ↓                                  ↓
 [banking-reviewer-fe]  +  [banking-reviewer-be]   (parallel)
-    ↓                            ↓
-              [banking-security]
-                       ↓
-              [banking-qa P2] — full automation
-                       ↓
-              [banking-devops P2] — full deploy
-                       ↓
-                     ✅ DoD met → status report back to [banking-pm]
+    ↓ changes_requested?                ↓
+  [banking-refactoring] ←──────────────┘  (loops back to reviewer, max 3x)
+    ↓ both approved
+[banking-integration]  +  [banking-security]   (parallel)
+(FE↔BE contract tests,      (STRIDE+SAST+DAST
+ OpenAPI drift, smoke)       +compliance)
+    ↓ both approved
+[banking-qa P2]        +  [banking-docs]   (parallel)
+(full automation suite)   (API ref, CHANGELOG,
+                           dev guide, ADR index)
+    ↓ both complete
+[banking-devops P2] — full deploy
+    ↓
+  ✅ DoD met → status report back to [banking-pm]
 ```
 
 See [docs/architecture/workflow.md](docs/architecture/workflow.md) for feedback loops and escalation rules.

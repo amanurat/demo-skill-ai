@@ -1,6 +1,6 @@
 # Workflow & Feedback Loops
 
-## Forward Flow (Optimized — Parallel + Shift-Left)
+## Forward Flow (Optimized — Parallel + Shift-Left + TDD + Integration)
 
 ```mermaid
 flowchart TD
@@ -16,20 +16,33 @@ flowchart TD
     SA --> TL
     DS_P2 -->|design handoff| TL[banking-tech-lead\nOpenAPI · DB Schema · ADRs]
 
-    TL --> FE[banking-frontend-dev\nAngular UI]
-    TL --> BE[banking-backend-dev\nSpring Boot Service]
+    TL --> PLAN[banking-implementation-planner\nTask Plan · Test Map · Interface Contracts]
     TL -.->|shift-left Phase 1| DO_P1[banking-devops P1\nCI/CD Skeleton · Dockerfile]
+
+    PLAN --> FE[banking-frontend-dev\n5-step Sequential TDD\nClient→State→Dumb→Smart→Routing]
+    PLAN --> BE[banking-backend-dev\n6-step Sequential TDD\nDomain→Repo→Service→Infra→Controller→Tests]
 
     FE --> RV_FE[banking-reviewer-fe\nAngular Specialist]
     BE --> RV_BE[banking-reviewer-be\nJava Specialist]
 
-    RV_FE -->|both approved| SEC[banking-security\nOWASP · SAST · PCI-DSS]
-    RV_BE -->|both approved| SEC
+    RV_FE -->|changes_requested| RF[banking-refactoring\nTargeted Fixes · No Scope Creep]
+    RV_BE -->|changes_requested| RF
+    RF -->|loop back max 3x| RV_FE
+    RF -->|loop back max 3x| RV_BE
 
-    SEC --> QA[banking-qa P2\nFull Automation · Perf · E2E]
+    RV_FE -->|both approved| SEC[banking-security\nSTRIDE · SAST/DAST · PCI-DSS]
+    RV_BE -->|both approved| SEC
+    RV_FE -->|both approved| INT[banking-integration\nFE↔BE Contract · OpenAPI Drift · Smoke Test]
+    RV_BE -->|both approved| INT
+
+    SEC -->|approved| QA[banking-qa P2\nFull Automation · Perf · E2E · Mutation]
+    INT -->|approved| QA
+    SEC -->|approved| DOCS[banking-docs\nAPI Reference · CHANGELOG · Dev Guide · ADR Index]
+    INT -->|approved| DOCS
     QA_P1 -.->|test plan ready| QA
 
     QA --> DO[banking-devops P2\nFull Deploy · Helm · Grafana]
+    DOCS -.->|docs ready| DO
     DO_P1 -.->|skeleton ready| DO
 
     DO --> Done([✅ DoD met])
@@ -38,24 +51,31 @@ flowchart TD
     style DS_P2 fill:#fce7f3,stroke:#db2777
     style QA_P1 fill:#fef9c3,stroke:#ca8a04
     style DO_P1 fill:#fef9c3,stroke:#ca8a04
+    style PLAN fill:#dbeafe,stroke:#3b82f6
+    style RF fill:#fee2e2,stroke:#ef4444
+    style INT fill:#d1fae5,stroke:#059669
+    style DOCS fill:#f3e8ff,stroke:#9333ea
     style Done fill:#22c55e,color:#fff
     style Req fill:#3b82f6,color:#fff
 ```
 
 > **เส้นประ (-.->)** = shift-left / parallel track ที่รันพร้อมกับ main flow
 > **เส้นทึบ (-->)** = sequential dependency ที่ต้องรอผล
-> **สีชมพู** = Designer track · **สีเหลือง** = Shift-left track
+> **สีน้ำเงิน** = Planning phase · **สีแดง** = Refactoring loop · **สีเขียว** = Integration gate · **สีม่วง** = Docs phase
 
 ## Feedback Loops
 
-| Trigger | Loop back to | Action |
-|---|---|---|
-| QA finds bug | `banking-backend-dev` or `banking-frontend-dev` | Auto re-fix + re-test |
-| Reviewer requests changes | `banking-backend-dev` / `banking-frontend-dev` | Refactor per comments |
-| Security finds critical/high vuln | Dev + `banking-solution-architect` if structural | Patch (or re-architect) |
-| Tech Lead spots ambiguous requirement | `banking-ba` | Clarify spec |
-| DevOps finds infra constraint | `banking-solution-architect` | Re-design |
-| Compliance violation | `banking-ba` + `banking-solution-architect` | Re-scope |
+| Trigger | Loop back to | Agent | Action |
+|---|---|---|---|
+| Reviewer returns `changes_requested` | `banking-refactoring` | `banking-reviewer-be` / `banking-reviewer-fe` | Targeted fixes per findings; loop back to reviewer (max 3 iterations) |
+| Integration finds OpenAPI ↔ BE drift | `banking-backend-dev` | `banking-integration` | Fix controller/DTO; re-review not required if isolated fix |
+| Integration finds OpenAPI ↔ FE drift | `banking-frontend-dev` | `banking-integration` | Regenerate client or fix type; re-review not required if isolated fix |
+| Integration finds contract shape change needed | `banking-tech-lead` | `banking-integration` | API redesign → full loop from TL → Planner → Dev |
+| Security finds critical/high vuln | Dev + `banking-solution-architect` if structural | `banking-security` | Patch (or re-architect); re-review required |
+| QA finds bug | `banking-backend-dev` or `banking-frontend-dev` | `banking-qa` | Fix + regression test + re-run suite |
+| Tech Lead spots ambiguous requirement | `banking-ba` | `banking-tech-lead` | Clarify spec |
+| DevOps finds infra constraint | `banking-solution-architect` | `banking-devops` | Re-design |
+| Compliance violation | `banking-ba` + `banking-solution-architect` | `banking-security` | Re-scope |
 
 ## Retry Policy
 

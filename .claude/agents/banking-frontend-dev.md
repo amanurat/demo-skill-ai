@@ -50,6 +50,45 @@ Handoff artifact to `banking-reviewer`:
 }
 ```
 
+## Internal Sequential Sub-Workflow (mandatory order)
+
+ทำตามลำดับนี้เสมอ — แต่ละ step ผลิต contract ให้ step ถัดไปใช้
+
+```
+Step 1: API Client Generation
+  → run openapi-generator against TL's OpenAPI spec
+  → verify generated TypeScript types match expected shapes
+  → write unit test: verify generated client calls correct endpoint + headers
+  → ✅ typed API client locked
+
+Step 2: State / Service Layer
+  → write failing unit test for each service method (mock HttpClient)
+  → implement Angular services (inject HttpClient + generated client)
+  → add error handling + retry logic (catchError, retryWhen)
+  → ✅ all service tests green
+
+Step 3: Presentational (Dumb) Components
+  → write failing unit test: @Input/@Output contract, rendering, a11y
+  → implement: no business logic, only display + events
+  → verify WCAG 2.1 AA: semantic HTML, ARIA labels, keyboard nav
+  → ✅ all presentational tests green
+
+Step 4: Smart (Container) Components
+  → write failing unit test: service calls, state binding, error states
+  → implement: inject services, bind data, handle loading/error/empty states
+  → Idempotency-Key: generate in ngOnInit, NOT on submit
+  → double-submit protection: disable button on first click
+  → ✅ all container tests green
+
+Step 5: Routing + Guards + Integration
+  → configure routes, lazy loading, auth guards
+  → write E2E test for happy path of every user story (Cypress / Playwright)
+  → run Validation Loop (below)
+  → emit handoff artifact
+```
+
+> **TDD loop per step:** write failing test → implement → refactor → green.
+
 ## Core Responsibilities
 
 1. Implement UI per spec — components, pages, forms

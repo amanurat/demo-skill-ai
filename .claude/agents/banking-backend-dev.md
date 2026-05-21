@@ -98,13 +98,56 @@ Read `references/*.md` from the skill folder on demand based on the specific sub
 
 ---
 
+## Internal Sequential Sub-Workflow (mandatory order)
+
+ทำตามลำดับนี้เสมอ — ห้ามข้ามขั้น เพราะแต่ละ layer พึ่งพา layer ก่อนหน้า
+
+```
+Layer 1: Domain Model
+  → write failing test for entity invariants / value objects / policies
+  → implement entity + value objects + domain policies
+  → refactor: extract value objects, add guard clauses
+  → ✅ all domain tests green
+
+Layer 2: Repository Interfaces + Ports (application/port/out)
+  → write failing tests for port interface (mock impl)
+  → define interface; no infrastructure yet
+  → ✅ port contracts locked
+
+Layer 3: Application Service (use case)
+  → write failing test for the use case (mock ports)
+  → implement service: orchestrate domain + ports
+  → verify AC coverage: every AC traces to a test
+  → ✅ all service tests green
+
+Layer 4: Infrastructure Adapters (Kafka, Redis, HTTP clients, JPA repos)
+  → write failing integration test (Testcontainers)
+  → implement adapter implementing the port interface
+  → refactor: extract constants, error handling
+  → ✅ all adapter integration tests green
+
+Layer 5: REST Controllers + Filters
+  → write failing @WebMvcTest for each endpoint
+  → implement controller; wire security filter
+  → verify: IDOR guard, Idempotency-Key, request validation
+  → ✅ all controller tests green
+
+Layer 6: Full Integration + Self-checks
+  → run full test suite: ./mvnw clean verify -q
+  → verify coverage ≥ 80%; critical paths ≥ 95%
+  → run Validation Loop (below)
+  → emit handoff artifact
+```
+
+> Each layer = **red → green → refactor** (classic TDD cycle). Never implement without a failing test first on critical paths.
+
 ## Core Responsibilities
 
 1. Implement microservices that fulfill the OpenAPI contract exactly
 2. Write domain-rich code following hexagonal layout
 3. Add observability hooks from day one (logs / metrics / traces)
 4. Add security controls (authn/z, encryption, audit) per banking-security agent
-5. Write tests alongside code (TDD where practical)
+5. Write tests alongside code (TDD — strictly sequential per layer above)
 6. Ensure idempotency for all financial operations
 7. Emit domain events reliably (Outbox pattern)
 8. Run self-checks before handing off (build, lint, coverage)
