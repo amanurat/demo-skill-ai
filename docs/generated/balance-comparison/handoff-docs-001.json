@@ -1,0 +1,23 @@
+{
+  "artifact_id": "d7c2a891-4f35-4b68-8e09-3a1c6f7d2e40",
+  "from_agent": "banking-docs",
+  "to_agent": "banking-player",
+  "phase": "DOCS",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "approved",
+    "deliverables": [
+      "docs/generated/balance-comparison/api-reference.md",
+      "docs/generated/balance-comparison/CHANGELOG.md",
+      "docs/generated/balance-comparison/developer-guide.md",
+      "docs/generated/balance-comparison/adr-index.md"
+    ]
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-22T00:00:00Z",
+    "quality_gate_passed": true,
+    "notes": "All four documentation deliverables produced from source artifacts: OpenAPI spec, implementation-notes, ADR-005/006/007, security-review-final-2, and DevOps P1 handoff. API reference covers the full BalanceDashboardResponse schema, all error responses (401/403/429/503), balance-as-string rationale, idempotency, cache behavior (X-Cache / Cache-Control), and security notes (no PII in URL, audit metadata-only). CHANGELOG documents all Added items (US-BC-001..005, Resilience4j, Redis TTL cache, Kafka audit, IDOR pattern, design tokens, PII masking, CI skeleton), Security section (CWE-532 F-1+F-2 resolved), and Known Limitations (BC-DEBT-002, C-1, stale fallback, event-driven cache, FIXED_DEPOSIT accrued interest, smoke tests, DAST). Developer guide covers prerequisites, local run instructions, all key env vars from DevOps P1 Helm values, test commands (unit+integration, ArchUnit, Angular, audit contract), design token workflow, Security C-2/C-3/C-4 constraints summary, and troubleshooting section. ADR index covers all 7 ADRs (SA-001..004, TL-005..007) with decision summaries, status, owner, and file paths.",
+    "next_agent": "banking-devops P2 (after banking-qa P2 also completes)"
+  }
+}
