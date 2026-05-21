@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>Mockup: 07 — Dense Layout (10 accounts)</title>
+  <link rel="preconnect" href="https://rsms.me">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/mockup-base.css">
+  <!--
+    US-MOCK-007: Dense layout — 10 accounts, no horizontal scroll, row #7 stale.
+    AC-MOCK-007-H1: no horizontal scroll at 375px; row #7 carries stale badge.
+    AC-MOCK-007-H2: tabular-nums enforced; balances range from ฿1,200,000.00 to ฿12.55.
+  -->
+</head>
+<body>
+  <div class="screen-wrapper">
+
+    <!-- APP HEADER -->
+    <header class="app-header" role="banner">
+      <div class="app-header__top">
+        <h1 class="app-header__title">บัญชีของฉัน</h1>
+        <button
+          type="button"
+          class="app-header__refresh"
+          aria-label="รีเฟรชข้อมูลบัญชี"
+        >
+          <!-- Heroicons outline: arrow-path -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      </div>
+      <p class="app-header__subtitle">อัปเดตล่าสุด · 10 บัญชี</p>
+    </header>
+
+    <!-- ACCOUNT LIST — 10 accounts sorted by balance descending -->
+    <main>
+      <ul
+        class="account-list"
+        aria-label="รายการบัญชีของฉัน"
+        role="list"
+      >
+
+        <!-- Row 1: Savings ****1001 — ฿1,200,000.00 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีออมทรัพย์</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 1001">****1001</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 1,200,000.00 บาท">฿1,200,000.00</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 2: Fixed Deposit ****2002 — ฿850,500.00 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีฝากประจำ</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 2002">****2002</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 850,500.00 บาท">฿850,500.00</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 3: Savings ****3003 — ฿340,200.75 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีออมทรัพย์</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 3003">****3003</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 340,200.75 บาท">฿340,200.75</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 4: Current ****4004 — ฿128,540.25 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีกระแสรายวัน</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 4004">****4004</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 128,540.25 บาท">฿128,540.25</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 5: Fixed Deposit ****5005 — ฿84,012.00 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีฝากประจำ</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 5005">****5005</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 84,012.00 บาท">฿84,012.00</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 6: Savings ****6006 — ฿45,800.50 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีออมทรัพย์</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 6006">****6006</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 45,800.50 บาท">฿45,800.50</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 7: Current ****7007 — ฿18,350.00 — STALE (per LO-FI annotation) -->
+        <li class="account-row" role="listitem" aria-label="บัญชีกระแสรายวัน ลงท้าย 7007 — ยอดอาจไม่ใช่ล่าสุด">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีกระแสรายวัน</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 7007">****7007</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T08:15">อัปเดต: 08:15</time></p>
+            <!-- Per-row stale badge -->
+            <span class="stale-badge" role="status">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+              </svg>
+              อาจไม่ใช่ยอดล่าสุด
+            </span>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 18,350.00 บาท (ข้อมูลอาจไม่ใช่ล่าสุด)">฿18,350.00</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 8: Savings ****8008 — ฿12,005.55 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีออมทรัพย์</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 8008">****8008</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 12,005.55 บาท">฿12,005.55</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 9: Fixed Deposit ****9009 — ฿3,750.00 -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีฝากประจำ</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 9009">****9009</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 3,750.00 บาท">฿3,750.00</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+        <!-- Row 10: Current ****0010 — ฿12.55 (minimum balance) -->
+        <li class="account-row" role="listitem">
+          <div class="account-type-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+            </svg>
+          </div>
+          <div class="account-row__info">
+            <p class="account-row__type">บัญชีกระแสรายวัน</p>
+            <p class="account-row__number" aria-label="เลขบัญชีลงท้าย 0010">****0010</p>
+            <p class="account-row__updated"><time datetime="2026-05-21T10:00">อัปเดต: 10:00</time></p>
+          </div>
+          <div class="account-row__balance-col">
+            <p class="balance-amount" aria-label="ยอดเงิน 12.55 บาท">฿12.55</p>
+            <p class="balance-currency" aria-hidden="true">THB</p>
+          </div>
+        </li>
+
+      </ul>
+    </main>
+
+  </div>
+</body>
+</html>

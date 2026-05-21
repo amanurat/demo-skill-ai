@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>Mockup: 05 — Error State</title>
+  <link rel="preconnect" href="https://rsms.me">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/mockup-base.css">
+  <!--
+    US-MOCK-005: Hard error state — generic copy, retry button, correlationId footer.
+    Security C-2: NO mention of service names (Redis, Kafka, AccountClient), HTTP codes,
+    balance values, or account numbers anywhere in user-facing copy.
+  -->
+</head>
+<body>
+  <div class="screen-wrapper">
+
+    <!-- APP HEADER -->
+    <header class="app-header" role="banner">
+      <div class="app-header__top">
+        <h1 class="app-header__title">บัญชีของฉัน</h1>
+      </div>
+      <p class="app-header__subtitle">เกิดข้อผิดพลาด</p>
+    </header>
+
+    <!-- ERROR STATE CONTENT -->
+    <main>
+      <div class="error-state" role="alert" aria-live="assertive">
+
+        <!-- Error icon — Heroicons outline: exclamation-circle in danger color -->
+        <svg
+          class="error-state__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+        </svg>
+
+        <!-- Heading — typography.heading_2, color.text.primary -->
+        <h2 class="error-state__heading">
+          เกิดข้อผิดพลาดในการโหลดข้อมูล
+        </h2>
+
+        <!-- Body copy — GENERIC, Security C-2 compliant: no service names, no HTTP codes -->
+        <p class="error-state__body">
+          กรุณาลองใหม่อีกครั้ง หรือกลับมาภายในไม่กี่นาที
+        </p>
+
+        <!--
+          Primary retry button
+          AC-MOCK-005-H1: background=color.primary.700, text=color.text.inverse,
+          border-radius=border_radius.button (8px), min-height=size.tap_min (44px)
+        -->
+        <button
+          type="button"
+          class="primary-button"
+          aria-label="ลองโหลดข้อมูลใหม่อีกครั้ง"
+        >
+          ลองใหม่
+        </button>
+
+        <!--
+          Correlation ID footer — AC-MOCK-005-H3
+          typography.caption + monospace + color.text.tertiary
+          Truncated trace ID for support reference (NOT a full UUID — truncated per spec)
+          Security C-2: This is just a reference code, no technical service info
+        -->
+        <p class="error-state__footer" aria-label="รหัสอ้างอิงสำหรับติดต่อทีมสนับสนุน">
+          รหัสอ้างอิง: 7f4e2b91-3a8c
+        </p>
+
+      </div>
+    </main>
+
+  </div>
+</body>
+</html>

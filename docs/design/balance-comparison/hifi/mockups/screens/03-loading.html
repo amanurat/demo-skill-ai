@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>Mockup: 03 — Loading Skeleton</title>
+  <link rel="preconnect" href="https://rsms.me">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/mockup-base.css">
+  <!-- US-MOCK-003: Loading skeleton — static placeholder, no shimmer (per OPEN-D-009), aria-busy=true -->
+</head>
+<body>
+  <div class="screen-wrapper">
+
+    <!-- APP HEADER — title visible, subtitle skeleton-ized -->
+    <header class="app-header" role="banner">
+      <div class="app-header__top">
+        <h1 class="app-header__title">บัญชีของฉัน</h1>
+        <button
+          type="button"
+          class="app-header__refresh"
+          aria-label="รีเฟรชข้อมูลบัญชี"
+          disabled
+          aria-disabled="true"
+        >
+          <!-- Heroicons outline: arrow-path -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      </div>
+      <!-- Subtitle replaced by skeleton bar at 50% width (14px height) -->
+      <span class="skeleton-subtitle" role="presentation" aria-hidden="true"></span>
+    </header>
+
+    <!-- ACCOUNT LIST — loading state -->
+    <main>
+      <!--
+        aria-busy="true" signals to screen readers that content is loading.
+        aria-label gives context. Exactly 3 skeleton rows regardless of any
+        cached count — prevents PII timing leak per AC-MOCK-003-H1.
+      -->
+      <ul
+        class="account-list"
+        aria-label="กำลังโหลดรายการบัญชี"
+        aria-busy="true"
+        role="list"
+      >
+
+        <!-- Skeleton Row 1 -->
+        <li class="skeleton-row" role="listitem" aria-hidden="true">
+          <div class="skeleton-row__icon"></div>
+          <div class="skeleton-row__content">
+            <!-- Bar 1: Account label (type name) -->
+            <span class="skeleton-bar" style="height: 16px; width: 45%;"></span>
+            <!-- Bar 2: Account number + balance placeholder -->
+            <span class="skeleton-bar" style="height: 20px; width: 70%;"></span>
+            <!-- Bar 3: Last-updated caption -->
+            <span class="skeleton-bar" style="height: 12px; width: 30%;"></span>
+          </div>
+          <div class="skeleton-row__balance">
+            <!-- Balance amount placeholder -->
+            <span class="skeleton-bar" style="height: 20px; width: 80px;"></span>
+            <!-- Currency label placeholder -->
+            <span class="skeleton-bar" style="height: 12px; width: 30px;"></span>
+          </div>
+        </li>
+
+        <!-- Skeleton Row 2 -->
+        <li class="skeleton-row" role="listitem" aria-hidden="true">
+          <div class="skeleton-row__icon"></div>
+          <div class="skeleton-row__content">
+            <span class="skeleton-bar" style="height: 16px; width: 55%;"></span>
+            <span class="skeleton-bar" style="height: 20px; width: 65%;"></span>
+            <span class="skeleton-bar" style="height: 12px; width: 30%;"></span>
+          </div>
+          <div class="skeleton-row__balance">
+            <span class="skeleton-bar" style="height: 20px; width: 80px;"></span>
+            <span class="skeleton-bar" style="height: 12px; width: 30px;"></span>
+          </div>
+        </li>
+
+        <!-- Skeleton Row 3 -->
+        <li class="skeleton-row" role="listitem" aria-hidden="true">
+          <div class="skeleton-row__icon"></div>
+          <div class="skeleton-row__content">
+            <span class="skeleton-bar" style="height: 16px; width: 50%;"></span>
+            <span class="skeleton-bar" style="height: 20px; width: 60%;"></span>
+            <span class="skeleton-bar" style="height: 12px; width: 30%;"></span>
+          </div>
+          <div class="skeleton-row__balance">
+            <span class="skeleton-bar" style="height: 20px; width: 80px;"></span>
+            <span class="skeleton-bar" style="height: 12px; width: 30px;"></span>
+          </div>
+        </li>
+
+      </ul>
+
+      <!-- Visually-hidden loading announcement for screen readers -->
+      <p class="visually-hidden" aria-live="polite" role="status">
+        กำลังโหลดข้อมูลบัญชี
+      </p>
+    </main>
+
+  </div>
+</body>
+</html>

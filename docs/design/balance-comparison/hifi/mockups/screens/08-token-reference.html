@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=375, initial-scale=1">
+  <title>Mockup: 08 — Design Token Reference Sheet</title>
+  <link rel="preconnect" href="https://rsms.me">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/mockup-base.css">
+  <!--
+    US-MOCK-008: Design token cross-reference sheet.
+    Section 1: Color swatches + contrast pairs
+    Section 2: Typography specimens
+    Section 3: Spacing rulers + border-radius samples
+    Note: this screen is wider than 375px content — scrollable reference doc, still at 375px wrapper.
+  -->
+  <style>
+    /* Token reference specific styles — all values via CSS vars */
+    .ref-page {
+      background-color: var(--color-surface-page);
+      padding: var(--spacing-4);
+    }
+
+    .ref-section {
+      margin-bottom: var(--spacing-7);
+    }
+
+    .ref-section__title {
+      font-family: var(--typography-heading-2-font-family);
+      font-size: var(--typography-heading-2-font-size);
+      font-weight: var(--typography-heading-2-font-weight);
+      line-height: var(--typography-heading-2-line-height);
+      color: var(--color-text-primary);
+      padding-bottom: var(--spacing-2);
+      border-bottom: var(--border-width-thick) solid var(--color-border-subtle);
+      margin-bottom: var(--spacing-4);
+    }
+
+    .ref-subsection {
+      margin-bottom: var(--spacing-5);
+    }
+
+    .ref-subsection__label {
+      font-family: var(--typography-label-font-family);
+      font-size: var(--typography-label-font-size);
+      font-weight: var(--typography-label-font-weight);
+      line-height: var(--typography-label-line-height);
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--spacing-3);
+    }
+
+    /* Color swatch grid */
+    .swatch-row {
+      display: flex;
+      gap: var(--spacing-2);
+      flex-wrap: wrap;
+      margin-bottom: var(--spacing-3);
+    }
+
+    .swatch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 52px;
+    }
+
+    .swatch__color {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--border-radius-md);
+      border: var(--border-width-hairline) solid var(--color-border-subtle);
+      margin-bottom: var(--spacing-1);
+    }
+
+    .swatch__stop {
+      font-family: var(--typography-caption-font-family);
+      font-size: 10px;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-snug);
+      color: var(--color-text-tertiary);
+      text-align: center;
+    }
+
+    .swatch__hex {
+      font-family: monospace;
+      font-size: 9px;
+      color: var(--color-text-disabled);
+      text-align: center;
+      word-break: break-all;
+    }
+
+    /* Semantic color swatches (4 families) */
+    .semantic-group {
+      margin-bottom: var(--spacing-4);
+    }
+
+    .semantic-group__name {
+      font-family: var(--typography-label-font-family);
+      font-size: var(--typography-label-font-size);
+      font-weight: var(--font-weight-semibold);
+      line-height: var(--typography-label-line-height);
+      color: var(--color-text-primary);
+      margin-bottom: var(--spacing-2);
+    }
+
+    .semantic-row {
+      display: flex;
+      gap: var(--spacing-2);
+    }
+
+    /* Contrast pair table */
+    .contrast-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--typography-caption-font-family);
+      font-size: var(--typography-caption-font-size);
+      font-weight: var(--typography-caption-font-weight);
+      line-height: var(--typography-caption-line-height);
+    }
+
+    .contrast-table th {
+      text-align: left;
+      font-weight: var(--font-weight-semibold);
+      color: var(--color-text-secondary);
+      padding: var(--spacing-2) var(--spacing-2);
+      border-bottom: var(--border-width-hairline) solid var(--color-border-subtle);
+      white-space: nowrap;
+    }
+
+    .contrast-table td {
+      padding: var(--spacing-2) var(--spacing-2);
+      border-bottom: var(--border-width-hairline) solid var(--color-border-subtle);
+      color: var(--color-text-primary);
+      vertical-align: middle;
+    }
+
+    .contrast-swatch-pair {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-bottom: 2px;
+    }
+
+    .contrast-swatch-pair__fg,
+    .contrast-swatch-pair__bg {
+      width: 14px;
+      height: 14px;
+      border-radius: var(--border-radius-sm);
+      border: var(--border-width-hairline) solid var(--color-border-subtle);
+      display: inline-block;
+    }
+
+    .wcag-badge {
+      display: inline-block;
+      padding: 2px var(--spacing-1);
+      border-radius: var(--border-radius-badge);
+      font-size: 10px;
+      font-weight: var(--font-weight-semibold);
+      white-space: nowrap;
+    }
+
+    .wcag-badge--aaa {
+      background-color: var(--color-semantic-success-tint);
+      color: var(--color-semantic-success-on-tint);
+    }
+
+    .wcag-badge--aa {
+      background-color: var(--color-semantic-info-tint);
+      color: var(--color-semantic-info-on-tint);
+    }
+
+    .wcag-badge--fail {
+      background-color: var(--color-semantic-danger-tint);
+      color: var(--color-semantic-danger-on-tint);
+    }
+
+    /* Typography specimens */
+    .type-specimen {
+      background-color: var(--color-surface-card);
+      border-radius: var(--border-radius-card);
+      padding: var(--spacing-3) var(--spacing-4);
+      margin-bottom: var(--spacing-3);
+      box-shadow: var(--elevation-1);
+    }
+
+    .type-specimen__label {
+      font-family: monospace;
+      font-size: 10px;
+      color: var(--color-text-disabled);
+      margin-bottom: var(--spacing-1);
+      display: block;
+    }
+
+    .type-specimen__meta {
+      font-family: var(--typography-caption-font-family);
+      font-size: var(--typography-caption-font-size);
+      font-weight: var(--typography-caption-font-weight);
+      line-height: var(--typography-caption-line-height);
+      color: var(--color-text-tertiary);
+      margin-top: var(--spacing-1);
+    }
+
+    /* Spacing rulers */
+    .spacing-ruler {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      margin-bottom: var(--spacing-2);
+    }
+
+    .spacing-ruler__bar {
+      height: 8px;
+      background-color: var(--color-primary-300);
+      border-radius: var(--border-radius-sm);
+      flex-shrink: 0;
+    }
+
+    .spacing-ruler__label {
+      font-family: var(--typography-caption-font-family);
+      font-size: var(--typography-caption-font-size);
+      font-weight: var(--typography-caption-font-weight);
+      line-height: var(--typography-caption-line-height);
+      color: var(--color-text-secondary);
+      white-space: nowrap;
+    }
+
+    /* Border-radius samples */
+    .radius-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-3);
+    }
+
+    .radius-sample {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--spacing-1);
+    }
+
+    .radius-sample__shape {
+      width: 48px;
+      height: 48px;
+      background-color: var(--color-primary-100);
+      border: var(--border-width-thick) solid var(--color-primary-300);
+    }
+
+    .radius-sample__label {
+      font-family: var(--typography-caption-font-family);
+      font-size: 10px;
+      color: var(--color-text-secondary);
+      text-align: center;
+    }
+
+    .radius-sample__value {
+      font-family: monospace;
+      font-size: 9px;
+      color: var(--color-text-disabled);
+      text-align: center;
+    }
+
+    /* Amount demo alignment */
+    .amount-demo {
+      font-family: var(--typography-amount-font-family);
+      font-size: var(--typography-amount-font-size);
+      font-weight: var(--typography-amount-font-weight);
+      line-height: var(--typography-amount-line-height);
+      font-feature-settings: var(--typography-amount-font-feature-settings);
+      font-variant-numeric: tabular-nums;
+      color: var(--color-text-primary);
+    }
+
+    .amount-demo__row {
+      display: block;
+      text-align: right;
+      padding: 2px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="screen-wrapper" style="min-height: auto;">
+
+    <!-- HEADER -->
+    <header class="app-header" role="banner">
+      <div class="app-header__top">
+        <h1 class="app-header__title">Token Reference</h1>
+      </div>
+      <p class="app-header__subtitle">Banking Design System v1.0.0</p>
+    </header>
+
+    <main class="ref-page">
+
+      <!-- =====================================================
+           SECTION 1: COLOR SWATCHES
+           ===================================================== -->
+      <section class="ref-section" aria-labelledby="section-color">
+        <h2 class="ref-section__title" id="section-color">1. Color Tokens</h2>
+
+        <!-- Primary Scale 50→900 -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Primary (Trust-Blue) 50→900</p>
+          <div class="swatch-row">
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-50);"></div>
+              <span class="swatch__stop">50</span>
+              <span class="swatch__hex">#EEF2FB</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-100);"></div>
+              <span class="swatch__stop">100</span>
+              <span class="swatch__hex">#D6DFF3</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-200);"></div>
+              <span class="swatch__stop">200</span>
+              <span class="swatch__hex">#AEC0E8</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-300);"></div>
+              <span class="swatch__stop">300</span>
+              <span class="swatch__hex">#7E96D5</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-400);"></div>
+              <span class="swatch__stop">400</span>
+              <span class="swatch__hex">#5777C5</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-500);"></div>
+              <span class="swatch__stop">500</span>
+              <span class="swatch__hex">#3B5BB8</span>
+            </div>
+          </div>
+          <div class="swatch-row">
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-600);"></div>
+              <span class="swatch__stop">600</span>
+              <span class="swatch__hex">#2A4AA5</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-700);"></div>
+              <span class="swatch__stop">700 ★</span>
+              <span class="swatch__hex">#1E3A8A</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-800);"></div>
+              <span class="swatch__stop">800</span>
+              <span class="swatch__hex">#162C6A</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-primary-900);"></div>
+              <span class="swatch__stop">900</span>
+              <span class="swatch__hex">#0F1F4A</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Neutral Scale 0→900 -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Neutral 0→900</p>
+          <div class="swatch-row">
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-0);"></div>
+              <span class="swatch__stop">0</span>
+              <span class="swatch__hex">#FFFFFF</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-50);"></div>
+              <span class="swatch__stop">50</span>
+              <span class="swatch__hex">#F8FAFC</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-100);"></div>
+              <span class="swatch__stop">100</span>
+              <span class="swatch__hex">#F1F5F9</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-200);"></div>
+              <span class="swatch__stop">200</span>
+              <span class="swatch__hex">#E2E8F0</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-300);"></div>
+              <span class="swatch__stop">300</span>
+              <span class="swatch__hex">#CBD5E1</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-400);"></div>
+              <span class="swatch__stop">400</span>
+              <span class="swatch__hex">#94A3B8</span>
+            </div>
+          </div>
+          <div class="swatch-row">
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-500);"></div>
+              <span class="swatch__stop">500</span>
+              <span class="swatch__hex">#64748B</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-600);"></div>
+              <span class="swatch__stop">600</span>
+              <span class="swatch__hex">#475569</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-700);"></div>
+              <span class="swatch__stop">700</span>
+              <span class="swatch__hex">#334155</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-800);"></div>
+              <span class="swatch__stop">800</span>
+              <span class="swatch__hex">#1E293B</span>
+            </div>
+            <div class="swatch">
+              <div class="swatch__color" style="background-color: var(--color-neutral-900);"></div>
+              <span class="swatch__stop">900</span>
+              <span class="swatch__hex">#0F172A</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Semantic Families -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Semantic Colors</p>
+
+          <!-- Success -->
+          <div class="semantic-group">
+            <p class="semantic-group__name">Success</p>
+            <div class="semantic-row">
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-success-base);"></div>
+                <span class="swatch__stop">base</span>
+                <span class="swatch__hex">#16A34A</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-success-tint);"></div>
+                <span class="swatch__stop">tint</span>
+                <span class="swatch__hex">#DCFCE7</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-success-on-tint);"></div>
+                <span class="swatch__stop">on_tint</span>
+                <span class="swatch__hex">#14532D</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Danger -->
+          <div class="semantic-group">
+            <p class="semantic-group__name">Danger</p>
+            <div class="semantic-row">
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-danger-base);"></div>
+                <span class="swatch__stop">base</span>
+                <span class="swatch__hex">#DC2626</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-danger-tint);"></div>
+                <span class="swatch__stop">tint</span>
+                <span class="swatch__hex">#FEE2E2</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-danger-on-tint);"></div>
+                <span class="swatch__stop">on_tint</span>
+                <span class="swatch__hex">#7F1D1D</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Warning -->
+          <div class="semantic-group">
+            <p class="semantic-group__name">Warning</p>
+            <div class="semantic-row">
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-warning-base);"></div>
+                <span class="swatch__stop">base</span>
+                <span class="swatch__hex">#D97706</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-warning-tint);"></div>
+                <span class="swatch__stop">tint</span>
+                <span class="swatch__hex">#FEF3C7</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-warning-on-tint);"></div>
+                <span class="swatch__stop">on_tint</span>
+                <span class="swatch__hex">#78350F</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Info -->
+          <div class="semantic-group">
+            <p class="semantic-group__name">Info</p>
+            <div class="semantic-row">
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-info-base);"></div>
+                <span class="swatch__stop">base</span>
+                <span class="swatch__hex">#0284C7</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-info-tint);"></div>
+                <span class="swatch__stop">tint</span>
+                <span class="swatch__hex">#E0F2FE</span>
+              </div>
+              <div class="swatch">
+                <div class="swatch__color" style="background-color: var(--color-semantic-info-on-tint);"></div>
+                <span class="swatch__stop">on_tint</span>
+                <span class="swatch__hex">#075985</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top 10 Contrast Pairs -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Top 10 Contrast Pairs (WCAG 2.1)</p>
+          <table class="contrast-table" aria-label="ตาราง contrast ระหว่างสีตามมาตรฐาน WCAG 2.1">
+            <thead>
+              <tr>
+                <th scope="col">Pair</th>
+                <th scope="col">Ratio</th>
+                <th scope="col">Level</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-primary);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-surface-card);"></span>
+                  </div>
+                  <br>text.primary / surface.card
+                </td>
+                <td>17.85:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-primary);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-surface-page);"></span>
+                  </div>
+                  <br>text.primary / surface.page
+                </td>
+                <td>17.16:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-inverse);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-primary-700);"></span>
+                  </div>
+                  <br>text.inverse / primary.700
+                </td>
+                <td>10.36:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-inverse);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-primary-800);"></span>
+                  </div>
+                  <br>text.inverse / primary.800
+                </td>
+                <td>13.74:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-secondary);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-surface-card);"></span>
+                  </div>
+                  <br>text.secondary / surface.card
+                </td>
+                <td>7.55:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-semantic-warning-on-tint);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-semantic-warning-tint);"></span>
+                  </div>
+                  <br>warning.on_tint / warning.tint
+                </td>
+                <td>8.05:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-semantic-danger-on-tint);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-semantic-danger-tint);"></span>
+                  </div>
+                  <br>danger.on_tint / danger.tint
+                </td>
+                <td>8.13:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-semantic-success-on-tint);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-semantic-success-tint);"></span>
+                  </div>
+                  <br>success.on_tint / success.tint
+                </td>
+                <td>9.96:1</td>
+                <td><span class="wcag-badge wcag-badge--aaa">AAA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-tertiary);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-surface-card);"></span>
+                  </div>
+                  <br>text.tertiary / surface.card
+                </td>
+                <td>5.05:1</td>
+                <td><span class="wcag-badge wcag-badge--aa">AA</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="contrast-swatch-pair">
+                    <span class="contrast-swatch-pair__fg" style="background-color: var(--color-text-disabled);"></span>
+                    <span class="contrast-swatch-pair__bg" style="background-color: var(--color-surface-card);"></span>
+                  </div>
+                  <br>text.disabled / surface.card
+                </td>
+                <td>2.86:1</td>
+                <td><span class="wcag-badge wcag-badge--fail">INTENTIONAL</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- =====================================================
+           SECTION 2: TYPOGRAPHY SPECIMENS
+           ===================================================== -->
+      <section class="ref-section" aria-labelledby="section-type">
+        <h2 class="ref-section__title" id="section-type">2. Typography Tokens</h2>
+
+        <!-- heading_1 -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.heading_1</span>
+          <p style="font-family: var(--typography-heading-1-font-family); font-size: var(--typography-heading-1-font-size); font-weight: var(--typography-heading-1-font-weight); line-height: var(--typography-heading-1-line-height); color: var(--color-text-primary);">
+            บัญชีของฉัน · My Accounts
+          </p>
+          <span class="type-specimen__meta">24px / LH 1.2 / Bold 700</span>
+        </div>
+
+        <!-- heading_2 -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.heading_2</span>
+          <p style="font-family: var(--typography-heading-2-font-family); font-size: var(--typography-heading-2-font-size); font-weight: var(--typography-heading-2-font-weight); line-height: var(--typography-heading-2-line-height); color: var(--color-text-primary);">
+            ยังไม่มีบัญชี · No Accounts Found
+          </p>
+          <span class="type-specimen__meta">20px / LH 1.4 / Semibold 600</span>
+        </div>
+
+        <!-- heading_3 -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.heading_3</span>
+          <p style="font-family: var(--typography-heading-3-font-family); font-size: var(--typography-heading-3-font-size); font-weight: var(--typography-heading-3-font-weight); line-height: var(--typography-heading-3-line-height); color: var(--color-text-primary);">
+            รายละเอียดบัญชี · Account Details
+          </p>
+          <span class="type-specimen__meta">18px / LH 1.4 / Semibold 600</span>
+        </div>
+
+        <!-- body -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.body</span>
+          <p style="font-family: var(--typography-body-font-family); font-size: var(--typography-body-font-size); font-weight: var(--typography-body-font-weight); line-height: var(--typography-body-line-height); color: var(--color-text-primary);">
+            กรุณาลองใหม่อีกครั้ง · Please try again later
+          </p>
+          <span class="type-specimen__meta">16px / LH 1.5 / Regular 400</span>
+        </div>
+
+        <!-- body_strong -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.body_strong</span>
+          <p style="font-family: var(--typography-body-strong-font-family); font-size: var(--typography-body-strong-font-size); font-weight: var(--typography-body-strong-font-weight); line-height: var(--typography-body-strong-line-height); color: var(--color-text-primary);">
+            บัญชีออมทรัพย์ · Savings Account
+          </p>
+          <span class="type-specimen__meta">16px / LH 1.5 / Semibold 600</span>
+        </div>
+
+        <!-- caption -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.caption</span>
+          <p style="font-family: var(--typography-caption-font-family); font-size: var(--typography-caption-font-size); font-weight: var(--typography-caption-font-weight); line-height: var(--typography-caption-line-height); color: var(--color-text-secondary);">
+            อัปเดต: 10:00 · Last updated: 10:00
+          </p>
+          <span class="type-specimen__meta">12px / LH 1.4 / Regular 400</span>
+        </div>
+
+        <!-- label -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.label</span>
+          <p style="font-family: var(--typography-label-font-family); font-size: var(--typography-label-font-size); font-weight: var(--typography-label-font-weight); line-height: var(--typography-label-line-height); color: var(--color-text-primary);">
+            อาจไม่ใช่ยอดล่าสุด · May not be current
+          </p>
+          <span class="type-specimen__meta">14px / LH 1.4 / Medium 500</span>
+        </div>
+
+        <!-- amount — special digit-alignment demo with 3 stacked balances -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.amount — digit alignment demo (tabular-nums)</span>
+          <div class="amount-demo" aria-label="ตัวอย่างการจัดตำแหน่งตัวเลข tabular-nums">
+            <span class="amount-demo__row">฿1,200,000.00</span>
+            <span class="amount-demo__row">฿128,540.25</span>
+            <span class="amount-demo__row">฿12.55</span>
+          </div>
+          <span class="type-specimen__meta">20px / LH 1.4 / Bold 700 / font-feature-settings: 'tnum' 1, 'lnum' 1</span>
+        </div>
+
+        <!-- amount_small -->
+        <div class="type-specimen">
+          <span class="type-specimen__label">typography.amount_small</span>
+          <p style="font-family: var(--typography-amount-small-font-family); font-size: var(--typography-amount-small-font-size); font-weight: var(--typography-amount-small-font-weight); line-height: var(--typography-amount-small-line-height); font-feature-settings: var(--typography-amount-small-font-feature-settings); font-variant-numeric: tabular-nums; color: var(--color-text-primary);">
+            ฿84,012.00 THB
+          </p>
+          <span class="type-specimen__meta">16px / LH 1.4 / Semibold 600 / tabular-nums</span>
+        </div>
+
+      </section>
+
+      <!-- =====================================================
+           SECTION 3: SPACING + BORDER RADIUS
+           ===================================================== -->
+      <section class="ref-section" aria-labelledby="section-space">
+        <h2 class="ref-section__title" id="section-space">3. Spacing &amp; Radius</h2>
+
+        <!-- Spacing rulers — 9 stops -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Spacing Scale (9 stops, 8px base)</p>
+
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: 0px; min-width: 2px; background-color: var(--color-neutral-200);"></div>
+            <span class="spacing-ruler__label">--spacing-0 · 0px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-1);"></div>
+            <span class="spacing-ruler__label">--spacing-1 · 4px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-2);"></div>
+            <span class="spacing-ruler__label">--spacing-2 · 8px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-3);"></div>
+            <span class="spacing-ruler__label">--spacing-3 · 12px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-4);"></div>
+            <span class="spacing-ruler__label">--spacing-4 · 16px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-5);"></div>
+            <span class="spacing-ruler__label">--spacing-5 · 24px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-6);"></div>
+            <span class="spacing-ruler__label">--spacing-6 · 32px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-7);"></div>
+            <span class="spacing-ruler__label">--spacing-7 · 48px</span>
+          </div>
+          <div class="spacing-ruler">
+            <div class="spacing-ruler__bar" style="width: var(--spacing-8);"></div>
+            <span class="spacing-ruler__label">--spacing-8 · 64px</span>
+          </div>
+        </div>
+
+        <!-- Border-radius samples — 6 values -->
+        <div class="ref-subsection">
+          <p class="ref-subsection__label">Border Radius (6 values)</p>
+          <div class="radius-grid">
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-none);"></div>
+              <span class="radius-sample__label">none</span>
+              <span class="radius-sample__value">0px</span>
+            </div>
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-sm);"></div>
+              <span class="radius-sample__label">sm</span>
+              <span class="radius-sample__value">4px</span>
+            </div>
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-md);"></div>
+              <span class="radius-sample__label">md/btn</span>
+              <span class="radius-sample__value">8px</span>
+            </div>
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-lg);"></div>
+              <span class="radius-sample__label">lg/card</span>
+              <span class="radius-sample__value">12px</span>
+            </div>
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-xl);"></div>
+              <span class="radius-sample__label">xl</span>
+              <span class="radius-sample__value">16px</span>
+            </div>
+            <div class="radius-sample">
+              <div class="radius-sample__shape" style="border-radius: var(--border-radius-pill); width: 80px;"></div>
+              <span class="radius-sample__label">pill/badge</span>
+              <span class="radius-sample__value">999px</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+</body>
+</html>
