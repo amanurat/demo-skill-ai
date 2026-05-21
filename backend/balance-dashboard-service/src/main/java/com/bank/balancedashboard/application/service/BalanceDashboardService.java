@@ -71,8 +71,11 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
      */
     @Override
     public RankedDashboard loadDashboard(UUID customerId) {
-        // R-BE-013: derive correlationId from OTel trace ID when a span is active;
-        // fall back to random UUID only when no OTel context is present (e.g., tests).
+        // R-BE-013 / R-BE-205: derive correlationId ONCE at method entry from the OTel trace ID.
+        // This single value is reused by ALL AuditEventRecord factory calls below
+        // (success, error) so that every audit path — including the error path — carries the
+        // same trace ID, enabling end-to-end correlation in Tempo/Jaeger.
+        // Falls back to a random UUID only when no active OTel span exists (e.g., unit tests).
         Span currentSpan = Span.current();
         String correlationId = currentSpan.getSpanContext().isValid()
                 ? currentSpan.getSpanContext().getTraceId()

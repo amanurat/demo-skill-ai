@@ -17,6 +17,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -52,9 +53,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>R-BE-005/006 fix: adds the missing controller test coverage, especially the
  * balance-is-string assertion (test #9).
+ *
+ * <p>R-BE-203 fix: {@code @TestPropertySource} overrides the base {@code application.yml}
+ * default ({@code balance-dashboard.enabled=false}) so that {@link BalanceDashboardController}
+ * is registered as a bean in the test context. Without this, all 9 tests receive HTTP 501
+ * from {@code BalanceDashboardDisabledController} instead of the asserted statuses.
  */
 @WebMvcTest(BalanceDashboardController.class)
 @Import(ProblemDetailAdvice.class)
+@TestPropertySource(properties = "balance-dashboard.enabled=true")
 class BalanceDashboardControllerTest {
 
     @Autowired

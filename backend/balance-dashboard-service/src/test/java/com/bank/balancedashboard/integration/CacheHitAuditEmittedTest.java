@@ -86,9 +86,21 @@ class CacheHitAuditEmittedTest {
 
     private static final UUID CUSTOMER_ID = UUID.fromString("11111111-2222-3333-4444-555555555555");
 
+    /**
+     * R-BE-204 fix: two-request test — first request populates Redis (cache MISS),
+     * second request is served from Redis (cache HIT). Asserts that:
+     * <ul>
+     *   <li>Request 1 returns X-Cache: MISS and audit is emitted with cacheHit=false</li>
+     *   <li>Request 2 returns X-Cache: HIT and audit is emitted with cacheHit=true (BR-014)</li>
+     *   <li>AuditEventPublisher.publish() is called TWICE in total</li>
+     * </ul>
+     *
+     * <p>Real Testcontainers Redis is used — Redis IS available so the second request
+     * genuinely hits the warm cache (as opposed to the iteration-1 "fail-open" comment).
+     */
     @Test
-    @DisplayName("(1) Cache hit -> audit emitted with cacheHit=true (BR-014)")
-    void cacheHit_auditStillEmitted_withCacheHitTrue() throws Exception {
+    @DisplayName("(1) Second request is cache HIT -> audit still emitted with cacheHit=true (BR-014)")
+    void secondRequest_isCacheHit_andAuditStillEmitted() throws Exception {
         // Given: AccountPort returns one account (will be cached after first request)
         when(accountPort.fetchAccounts(any())).thenReturn(List.of(
                 new AccountView(1, UUID.randomUUID(), "****5678", AccountType.SAVINGS,
@@ -96,7 +108,7 @@ class CacheHitAuditEmittedTest {
         ));
         doNothing().when(auditEventPublisher).publish(any());
 
-        // When: first request (cache miss -> fetches from AccountPort)
+        // Request 1 — cache MISS: populates Redis
         mockMvc.perform(get("/api/v1/balance-dashboard")
                         .with(jwt().jwt(j -> j.subject(CUSTOMER_ID.toString())
                                 .claim("scope", "accounts:read")))
@@ -104,14 +116,31 @@ class CacheHitAuditEmittedTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Cache", "MISS"));
 
-        // Then: audit emitted once with cacheHit=false
+        // Audit emitted once for the MISS — cacheHit=false
         ArgumentCaptor<AuditEventRecord> captor1 = ArgumentCaptor.forClass(AuditEventRecord.class);
         verify(auditEventPublisher, times(1)).publish(captor1.capture());
         assertThat(captor1.getValue().result()).isEqualTo(Result.SUCCESS);
-        // Note: In this test the CachePort is NOT mocked (using real RedisCacheRepository)
-        // but Redis is not available. The service fails-open and uses AccountPort.
-        // The key assertion is: audit is ALWAYS emitted regardless of cache state.
+        assertThat(captor1.getValue().cacheHit()).isFalse();
         assertThat(captor1.getValue().accountCount()).isEqualTo(1);
+
+        // Request 2 — cache HIT: served from Redis (real Testcontainers Redis container)
+        mockMvc.perform(get("/api/v1/balance-dashboard")
+                        .with(jwt().jwt(j -> j.subject(CUSTOMER_ID.toString())
+                                .claim("scope", "accounts:read")))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Cache", "HIT"));
+
+        // Audit emitted a SECOND time for the HIT — cacheHit=true (BR-014: always emitted)
+        ArgumentCaptor<AuditEventRecord> captor2 = ArgumentCaptor.forClass(AuditEventRecord.class);
+        verify(auditEventPublisher, times(2)).publish(captor2.capture());
+        List<AuditEventRecord> allAuditEvents = captor2.getAllValues();
+        assertThat(allAuditEvents).hasSize(2);
+        // Second event must have cacheHit=true
+        assertThat(allAuditEvents.get(1).cacheHit()).isTrue();
+        assertThat(allAuditEvents.get(1).result()).isEqualTo(Result.SUCCESS);
+        // AccountPort must NOT be called again on cache hit (only once total)
+        verify(accountPort, times(1)).fetchAccounts(any());
     }
 
     @Test

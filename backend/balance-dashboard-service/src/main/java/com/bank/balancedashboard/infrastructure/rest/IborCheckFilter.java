@@ -4,6 +4,7 @@ import com.bank.balancedashboard.application.port.out.AuditEventPublisher;
 import com.bank.balancedashboard.domain.audit.AuditEventRecord;
 import com.bank.balancedashboard.domain.audit.Channel;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -95,7 +96,13 @@ public class IborCheckFilter extends OncePerRequestFilter {
         if (headerCustomerId != null && !headerCustomerId.equals(jwtSub)) {
             // IDOR tamper detected: header value does not match JWT sub
             UUID actorId = parseUuidOrNull(jwtSub);
-            String correlationId = UUID.randomUUID().toString();
+            // R-BE-205: derive correlationId from the active OTel span so the FORBIDDEN audit
+            // record carries the same trace ID as logs/spans — operators can correlate in Tempo.
+            // Falls back to a random UUID when no active OTel span exists (e.g., tests).
+            Span currentSpan = Span.current();
+            String correlationId = currentSpan.getSpanContext().isValid()
+                    ? currentSpan.getSpanContext().getTraceId()
+                    : UUID.randomUUID().toString();
             Channel channel = Channel.fromUserAgent(req.getHeader("User-Agent"));
 
             // Audit FORBIDDEN before aborting (ADR-006 §2.5, ADR-007 call site 2)

@@ -71,6 +71,21 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- ===== Apicurio Registry Avro Serde (R-BE-202: AvroKafkaSerializer on classpath) ===== -->
+        <!-- Required: application.yml value-serializer references io.apicurio.registry.serde.avro.AvroKafkaSerializer -->
+        <dependency>
+            <groupId>io.apicurio</groupId>
+            <artifactId>apicurio-registry-serdes-avro-serde</artifactId>
+            <version>2.5.8.Final</version>
+        </dependency>
+
+        <!-- ===== Apache Avro (transitive for Apicurio serde, pinned explicitly) ===== -->
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+            <version>1.11.3</version>
+        </dependency>
+
         <!-- ===== Actuator ===== -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
