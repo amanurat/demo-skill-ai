@@ -1,0 +1,237 @@
+{
+  "artifact_id": "9b1f6c4a-2d83-4b67-a410-7e5fa9d62c81",
+  "from_agent": "banking-pm",
+  "to_agent": "banking-ba",
+  "phase": "PLANNING",
+  "feature": "balance-comparison",
+  "payload": {
+    "sprint": {
+      "sprint_id": "SPRINT-2026-Q2-BC-01",
+      "window_start": "2026-05-21",
+      "window_end": "2026-06-04",
+      "demo_date": "2026-06-04",
+      "sprint_goal": "Deliver a read-only Account Balance Comparison Dashboard for retail customers showing their own accounts ranked by balance (desc) on a mobile-first UI with p95 < 500ms, reusing the existing AccountClient and AccountInfo from money-transfer, demo-able on staging by 2026-06-04.",
+      "capacity_sp": 12,
+      "committed_sp": 7,
+      "stretch_sp": 2
+    },
+    "epic": {
+      "epic_id": "EPIC-BC-001",
+      "title": "Account Balance Comparison Dashboard",
+      "persona": "Retail banking customer (multi-account holder)",
+      "business_value": "high",
+      "regulatory_drivers": ["PDPA", "BoT IT-Risk Guidelines"],
+      "scope_mode": "read-only"
+    },
+    "top_stories_for_ba_expansion": [
+      {
+        "id": "US-BC-001",
+        "title": "List my accounts ranked by balance (desc)",
+        "as_a": "authenticated retail customer",
+        "i_want": "to see all my own accounts in a single list ordered from highest to lowest balance",
+        "so_that": "I can compare my balances at a glance and decide where to move funds",
+        "priority": "MUST",
+        "estimated_sp": 2,
+        "reuse": ["AccountClient.listAccountsByCustomer()", "AccountInfo DTO", "OAuth2/JWT auth filter", "audit-service event emitter"],
+        "new_work": ["balance-dashboard aggregation endpoint (SA to decide service boundary via ADR)", "ranking logic"],
+        "ba_must_cover_ac": [
+          "Authorization — only the authenticated customer's own accounts are returned (no cross-customer leakage)",
+          "Ranking determinism when balances are equal (tie-breaker rule needed — BA to propose: by accountType then accountId)",
+          "Empty-state behavior when customer has zero accounts",
+          "Currency-mixed list behavior (rank within same currency or across — depends on OPEN-001 resolution)",
+          "Audit event emitted on every successful retrieval with purpose=balance-inquiry"
+        ],
+        "nfr_seeds": ["p95 < 500ms warm cache, p95 < 1000ms cold cache for 10 accounts"]
+      },
+      {
+        "id": "US-BC-002",
+        "title": "See per-account details (type, balance, currency, last updated)",
+        "as_a": "authenticated retail customer",
+        "i_want": "each row to clearly show account type, balance, currency, and when it was last updated",
+        "so_that": "I have enough context to act on the comparison",
+        "priority": "MUST",
+        "estimated_sp": 2,
+        "reuse": ["AccountInfo fields (accountId, accountNumber masked, accountType, balance, currency, status, lastUpdatedAt)"],
+        "new_work": ["display-label mapping for accountType (TH/EN)", "relative-time formatter for lastUpdatedAt"],
+        "ba_must_cover_ac": [
+          "Account number is always masked per existing PDPA convention (last 4 visible)",
+          "accountType displays as human-readable label, not enum",
+          "lastUpdatedAt definition resolved — see OPEN-002 (ledger balance_as_of vs row updated_at)",
+          "Dormant/closed account treatment per OPEN-003",
+          "Only deposit-style account types appear per OPEN-004 (no loan/credit-card balances unless stakeholder overrides)"
+        ],
+        "nfr_seeds": ["No full account number in DOM, network payload, or browser console; Lighthouse a11y >= 90"]
+      },
+      {
+        "id": "US-BC-003",
+        "title": "Dashboard meets p95 < 500ms for 10 accounts",
+        "as_a": "authenticated retail customer on a mobile device",
+        "i_want": "the dashboard to feel instant when I open it",
+        "so_that": "I do not abandon the screen on 4G networks",
+        "priority": "MUST",
+        "estimated_sp": 3,
+        "reuse": ["existing OpenTelemetry tracing setup", "existing Redis cluster (per ASSUME-004)"],
+        "new_work": ["batched AccountClient call pattern", "Redis cache key strategy customer:{id}:accounts TTL 30s", "Grafana panel for cache hit ratio"],
+        "ba_must_cover_ac": [
+          "p95 < 500ms measured with 10-account warm cache via Gatling/k6 against staging",
+          "p95 < 1000ms acceptable on cold cache (documented graceful degradation)",
+          "Cache invalidation rule documented (TTL only for v1; event-driven invalidation deferred to next sprint)",
+          "Audit event must not be suppressed by cache hit (always emit)"
+        ],
+        "nfr_seeds": ["Cache hit ratio > 70% target after warm-up", "No silent cache failure — fail-open to AccountClient"]
+      },
+      {
+        "id": "US-BC-005",
+        "title": "Mobile-first responsive layout and a11y AA",
+        "as_a": "retail customer using a mobile device or screen reader",
+        "i_want": "the dashboard to be usable on small screens and assistive tech",
+        "so_that": "the feature is accessible to all customers",
+        "priority": "SHOULD",
+        "estimated_sp": 2,
+        "stretch": true,
+        "drop_condition": "If reviewer iterations exceed 2 rounds by D8 or any MUST story slips",
+        "reuse": ["existing design system tokens (Designer P2 to map)", "existing a11y utilities in Angular base"],
+        "new_work": ["responsive breakpoints for 375/768/1024", "ARIA roles on ranked list"],
+        "ba_must_cover_ac": [
+          "Works without horizontal scroll at 375px viewport",
+          "All controls keyboard-reachable",
+          "Screen reader announces rank position and balance for each row",
+          "Lighthouse mobile a11y >= 90"
+        ]
+      }
+    ],
+    "deferred_stories": [
+      {
+        "id": "US-BC-004",
+        "title": "Total wealth in home currency (multi-currency aggregation)",
+        "priority": "SHOULD",
+        "deferred_to": "follow-up sprint",
+        "reason": "OPEN-001 FX source decision required; default-path is to drop from this sprint"
+      }
+    ],
+    "out_of_scope_stories": [
+      {"id": "US-BC-006", "title": "Filter / search accounts", "disposition": "COULD next sprint"},
+      {"id": "US-BC-007", "title": "Sparkline of balance over time", "disposition": "COULD next sprint"},
+      {"id": "US-BC-008", "title": "Hide / pin specific accounts", "disposition": "COULD next sprint"},
+      {"id": "US-BC-009", "title": "CSV / PDF export", "disposition": "WON'T"},
+      {"id": "US-BC-010", "title": "Joint-account / POA support", "disposition": "WON'T"},
+      {"id": "US-BC-011", "title": "Push notification on balance change", "disposition": "WON'T"}
+    ],
+    "reuse_inventory": {
+      "must_reuse_not_rebuild": [
+        "AccountClient (Spring Boot REST/Feign client from money-transfer)",
+        "AccountInfo DTO (from money-transfer)",
+        "OAuth2/OIDC + JWT auth filter chain",
+        "Audit logging interceptor and audit-service event emitter",
+        "OpenTelemetry tracing setup",
+        "Existing design system tokens"
+      ]
+    },
+    "new_assets_expected": [
+      "balance-dashboard aggregation endpoint (SA: decide service boundary)",
+      "Redis cache key strategy and invalidation policy",
+      "Angular standalone <balance-dashboard> component",
+      "OpenAPI spec for the new endpoint",
+      "Test plan covering ranking determinism, currency handling, perf",
+      "Grafana panel: latency, cache hit ratio, audit-event rate"
+    ],
+    "shift_left_orchestration_instructions": {
+      "after_ba_001": {
+        "fire_in_parallel": ["banking-solution-architect", "banking-designer (Phase 1 LO-FI)", "banking-qa (Phase 1 test plan)"],
+        "rationale": "Designer P1 and QA P1 must NOT wait for SA — they consume BA stories directly per workflow.md",
+        "player_must_invoke_as_batch": true
+      },
+      "after_tl_001": {
+        "fire_in_parallel": ["banking-frontend-dev", "banking-backend-dev", "banking-devops (Phase 1 CI/CD skeleton)"],
+        "rationale": "DevOps P1 starts on Dockerfile/Helm skeleton while devs implement; saves D10 deployment time",
+        "player_must_invoke_as_batch": true
+      },
+      "early_security_look": {
+        "agent": "banking-security",
+        "trigger": "After BA-001 completeness gate passes",
+        "scope": "Consent-coverage review only (RISK-003 mitigation) — not full SAST gate",
+        "rationale": "Catch PDPA consent gap by D2-D3 instead of D9"
+      }
+    },
+    "open_decisions_for_ba_to_clarify": [
+      {
+        "id": "OPEN-001",
+        "question": "FX rate source for multi-currency display",
+        "options": ["A: native currency only (default)", "B: BoT mid-rate conversion (defers US-BC-004)", "C: both native + converted (next sprint)"],
+        "default_if_unanswered": "Option A — drop US-BC-004 to follow-up sprint",
+        "need_by": "2026-05-22 EOD"
+      },
+      {
+        "id": "OPEN-002",
+        "question": "Definition of lastUpdatedAt",
+        "options": ["ledger balance_as_of timestamp", "row updated_at"],
+        "default_if_unanswered": "ledger balance_as_of"
+      },
+      {
+        "id": "OPEN-003",
+        "question": "Dormant or closed account visibility",
+        "options": ["hide", "grey-out display"],
+        "default_if_unanswered": "hide"
+      },
+      {
+        "id": "OPEN-004",
+        "question": "Which account types are in scope",
+        "options": ["deposit only (savings, current, fixed)", "include loan and credit-card balances"],
+        "default_if_unanswered": "deposit only"
+      }
+    ],
+    "exit_criteria_for_sprint": [
+      "All MUST stories pass demo acceptance criteria on staging by 2026-06-04 09:00 ICT",
+      "DoD universal + banking-specific checklist fully checked",
+      "p95 < 500ms warm-cache for 10 accounts verified by QA evidence",
+      "Audit event emitted for every dashboard load (BoT compliance evidence)",
+      "Lighthouse mobile a11y >= 90 on demo page",
+      "Stakeholder summary report emitted by banking-pm post-demo",
+      "RAID log updated with carry-over items"
+    ],
+    "top_risks": [
+      {
+        "id": "RISK-001",
+        "headline": "FX rate source for multi-currency display undecided",
+        "score": 16,
+        "default_mitigation": "drop US-BC-004 to next sprint"
+      },
+      {
+        "id": "RISK-002",
+        "headline": "10-day demo window is tight",
+        "score": 15,
+        "default_mitigation": "reuse-first policy + shift-left parallel tracks + sacrificial stretch (US-BC-005)"
+      },
+      {
+        "id": "RISK-003",
+        "headline": "PDPA consent reuse from money-transfer needs verification",
+        "score": 10,
+        "default_mitigation": "early-look security review at D2-D3 (not D9)"
+      }
+    ],
+    "stakeholder_context": {
+      "audience": "retail banking customer",
+      "regulatory": ["PDPA Thailand (data minimization, audit trail of personal data access)", "BoT IT-Risk Guidelines (audit logging, retention)"],
+      "demo_audience": "internal team demo on 2026-06-04",
+      "follow_up_sprint": "carry-over: US-BC-004 (FX), US-BC-006..008 (filter/search/preferences)"
+    },
+    "references": {
+      "backlog": "docs/pm/balance-comparison/backlog.md",
+      "sprint_goal": "docs/pm/balance-comparison/sprint-goal.md",
+      "risk_register": "docs/pm/balance-comparison/risk-register.md",
+      "stakeholder_summary": "docs/pm/balance-comparison/stakeholder-summary.md",
+      "workflow": "docs/architecture/workflow.md",
+      "quality_gates": "docs/architecture/quality-gates.md",
+      "definition_of_done": "docs/architecture/definition-of-done.md",
+      "handoff_schema": "docs/architecture/handoff-schema.md"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T09:00:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": null,
+    "notes": "PM-001 initial intake. BA must resolve OPEN-001..004 with stakeholder by 2026-05-22 EOD before SA starts ADRs. Player must enforce shift-left parallel invocation (Designer P1 + QA P1 fire-with-SA, DevOps P1 fire-with-devs)."
+  }
+}
