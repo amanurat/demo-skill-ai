@@ -1,0 +1,278 @@
+# =============================================================================
+# balance-dashboard-service — Helm Values (staging defaults)
+# Standard: banking-devops-platform/references/dockerfile-helm-standards.md
+#
+# Override per environment:
+#   helm upgrade --install balance-dashboard-service-staging \
+#     ./infra/helm/balance-dashboard-service \
+#     --namespace banking-staging \
+#     --set image.tag=<git-sha-or-semver> \
+#     --timeout 5m \
+#     --wait
+#
+# Rollback:
+#   helm rollback balance-dashboard-service-staging --namespace banking-staging
+#
+# Hard rules enforced here:
+#   - replicaCount >= 2 (SA availability_99_9_pct_bds NFR)
+#   - topologySpreadConstraints across 2 AZs (maxSkew 1, DoNotSchedule)
+#   - HPA minReplicas >= 2, CPU target 70%
+#   - No inline secrets — all sensitive values via Vault CSI secretKeyRef
+#   - Resource requests == limits for JVM (prevents OOMKilled surprises)
+#   - NetworkPolicy: ingress from api-gateway only; egress allow-list only
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Image
+# NEVER use :latest — helm rollback requires a pinned digest/tag
+# tag overridden at deploy time: --set image.tag=<git-sha-or-semver>
+# ---------------------------------------------------------------------------
+image:
+  repository: ghcr.io/your-org/bank/balance-dashboard-service
+  tag: "0.1.0-SNAPSHOT"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ---------------------------------------------------------------------------
+# Replica count — minimum 2 for HA (spread across 2 AZs)
+# SA NFR: availability_99_9_pct_bds
+# ---------------------------------------------------------------------------
+replicaCount: 2
+
+# ---------------------------------------------------------------------------
+# Service account — least privilege; no cluster-wide permissions
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: "balance-dashboard-service"
+  annotations: {}
+  automountServiceAccountToken: false
+
+# ---------------------------------------------------------------------------
+# Pod settings
+# ---------------------------------------------------------------------------
+podAnnotations:
+  # Prometheus scrape wired via ServiceMonitor — annotations kept for
+  # environments without Prometheus Operator (belt-and-suspenders)
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8081"
+  prometheus.io/path: "/actuator/prometheus"
+
+podLabels:
+  app: balance-dashboard-service
+  version: "0.1.0"
+  team: platform-banking
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# ---------------------------------------------------------------------------
+# Resource requests + limits
+# JVM workload: requests == limits (avoids scheduler mismatch + OOMKilled)
+# SA spec: cpu 250m/1000m, memory 512Mi/1Gi
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# ---------------------------------------------------------------------------
+# Service — ClusterIP only; api-gateway is the sole ingress point
+# Application port: 8080 | Management/metrics port: 8081
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 8080
+  managementPort: 8081
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Liveness + Readiness probes
+# IMPORTANT: liveness != readiness (see banking-devops gotcha)
+#   liveness  — kills stuck JVM (does NOT check Redis / account-service)
+#   readiness — pulls pod from load balancer (checks Redis + upstream health)
+# No Flyway migrations → initialDelaySeconds shorter than transfer-service
+# ---------------------------------------------------------------------------
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    port: 8081
+    initialDelaySeconds: 45
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  readiness:
+    path: /actuator/health/readiness
+    port: 8081
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  startup:
+    path: /actuator/health/liveness
+    port: 8081
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 12   # allow up to 130s for JVM startup
+
+# ---------------------------------------------------------------------------
+# Horizontal Pod Autoscaler
+# SA NFR: scalability_50_peak_concurrent
+# CPU target: 70% | Custom metric: balance_dashboard_requests_total rate > 30/s/pod
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  customMetrics:
+    enabled: true
+    # Prometheus adapter exposes this metric via custom.metrics.k8s.io
+    # Rate of balance_dashboard_requests_total across all pods in this namespace
+    metricName: balance_dashboard_requests_total
+    # Scale out when per-pod rate exceeds 30 requests/second
+    targetAverageValue: "30"
+
+# ---------------------------------------------------------------------------
+# Pod Disruption Budget — ensures at least 1 pod alive during cluster ops
+# With minReplicas=2, at most 1 pod disrupted at a time
+# ---------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# ---------------------------------------------------------------------------
+# Application configuration (non-secret)
+# Feature flag: staging = true
+#   - balance-dashboard.enabled=true → BalanceDashboardController bean registered
+#   - Disabled state: returns 501 Not Implemented (NOT 404 — ops can distinguish
+#     "feature disabled" from "URL typo" in logs per implementation-notes §5)
+# ---------------------------------------------------------------------------
+config:
+  springProfile: staging
+  environment: staging
+  logLevel: INFO
+
+  # Feature flag bootstrap (D5 requirement — DevOps P1)
+  # staging: true → BDS endpoint reachable
+  # prod:    false → BDS deployed but returns 501 until BoT sign-off (values-prod.yaml)
+  featureFlag:
+    balanceDashboardEnabled: "true"   # staging=true per impl-notes §9.3
+
+  # Redis configuration (non-secret portions)
+  redis:
+    host: "redis-shared.banking-staging.svc.cluster.local"
+    port: "6379"
+    # TLS enabled per Security C-4 (ssl.enabled=true in application.yml)
+    # Password injected from Vault — see secret.yaml
+
+  # Kafka configuration (non-secret portions)
+  kafka:
+    bootstrapServers: "kafka.kafka.svc.cluster.local:9092"
+    topic:
+      auditEventRecorded: "audit.event-recorded"
+    # Apicurio schema registry — v2 schema must be registered by D6 (SA-RISK-002 blocker)
+    schemaRegistry:
+      url: "http://apicurio.apicurio.svc.cluster.local:8080/apis/registry/v2"
+
+  # Account-service upstream
+  accountService:
+    url: "http://account-service.banking-staging.svc.cluster.local:8080"
+
+  # OpenTelemetry
+  otel:
+    enabled: true
+    endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+    samplingRate: "1.0"   # 100% in staging; reduce to 0.1 in prod under load
+
+  # Management server isolation
+  management:
+    port: "8081"
+    address: "0.0.0.0"   # NetworkPolicy restricts; needed for ServiceMonitor scrape
+
+  springdoc:
+    swaggerUiEnabled: "false"
+
+# ---------------------------------------------------------------------------
+# Topology spread — distribute pods across 2 AZs
+# SA NFR: availability_99_9_pct_bds
+# maxSkew: 1 / DoNotSchedule: scheduler refuses to place pod if it would
+# create skew > 1 across zones (hard guarantee, not just preference)
+# ---------------------------------------------------------------------------
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app: balance-dashboard-service
+
+nodeSelector: {}
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - balance-dashboard-service
+          topologyKey: kubernetes.io/hostname
+
+# ---------------------------------------------------------------------------
+# Extra environment variables (non-sensitive)
+# ---------------------------------------------------------------------------
+extraEnv: []
+
+# ---------------------------------------------------------------------------
+# Vault CSI volume mounts — secrets injected at runtime (no inline secrets)
+# Vault paths:
+#   banking/balance-dashboard-service/redis-password    -> REDIS_PASSWORD
+#   banking/balance-dashboard-service/kafka-sasl-jaas   -> KAFKA_SASL_JAAS_CONFIG
+# ---------------------------------------------------------------------------
+extraVolumeMounts:
+  - name: vault-secrets
+    mountPath: /vault/secrets
+    readOnly: true
+
+extraVolumes:
+  - name: vault-secrets
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: balance-dashboard-service-vault-secrets
+
+# tmpfs required because containerSecurityContext.readOnlyRootFilesystem=true
+extraVolumeMountsSystem:
+  - name: tmp-dir
+    mountPath: /tmp
+
+extraVolumesSystem:
+  - name: tmp-dir
+    emptyDir: {}

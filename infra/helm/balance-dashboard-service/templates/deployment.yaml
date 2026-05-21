@@ -1,0 +1,213 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+  annotations:
+    deployment.kubernetes.io/revision: "{{ .Release.Revision }}"
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "balance-dashboard-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0   # Zero-downtime rolling update — SA NFR availability_99_9_pct_bds
+  template:
+    metadata:
+      labels:
+        {{- include "balance-dashboard-service.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        # Force pod restart when ConfigMap changes (config hash)
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "balance-dashboard-service.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 30   # No DB connections to drain; 30s is sufficient
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # Spring profile — drives application-{profile}.yml loading
+            - name: SPRING_PROFILES_ACTIVE
+              value: {{ .Values.config.springProfile | quote }}
+
+            # Feature flag: staging=true, prod=false
+            # impl-notes §5 — disabled returns 501 Not Implemented (not 404)
+            - name: BALANCE_DASHBOARD_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: feature.balance-dashboard.enabled
+
+            # Environment tag for Micrometer metrics
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: environment
+
+            # Redis (non-secret)
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: redis.host
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: redis.port
+
+            # Redis password — Vault-managed (Security C-4; secret rotation requires pod restart)
+            # NOTE: K8s envFrom does not hot-reload on rotation — restart pod after Vault secret rotation
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: balance-dashboard-service-vault-redis
+                  key: redis-password
+
+            # Kafka (non-secret)
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: kafka.bootstrap-servers
+            - name: KAFKA_SCHEMA_REGISTRY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: kafka.schema-registry-url
+
+            # Kafka SASL — Vault-managed
+            - name: KAFKA_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: balance-dashboard-service-vault-kafka
+                  key: kafka-sasl-jaas-config
+
+            # Account-service upstream URL
+            - name: ACCOUNT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "balance-dashboard-service.fullname" . }}-config
+                  key: account-service.url
+
+            # Management server port (metrics isolation)
+            - name: MANAGEMENT_SERVER_PORT
+              value: {{ .Values.config.management.port | quote }}
+            - name: MANAGEMENT_SERVER_ADDRESS
+              value: {{ .Values.config.management.address | quote }}
+
+            # OTel
+            {{- if .Values.config.otel.enabled }}
+            - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+              value: {{ .Values.config.otel.endpoint | quote }}
+            - name: MANAGEMENT_TRACING_SAMPLING_PROBABILITY
+              value: {{ .Values.config.otel.samplingRate | quote }}
+            {{- end }}
+
+            - name: SPRINGDOC_SWAGGER_UI_ENABLED
+              value: {{ .Values.config.springdoc.swaggerUiEnabled | quote }}
+
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            successThreshold: {{ .Values.probes.liveness.successThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: management
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.extraVolumeMountsSystem }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+      volumes:
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.extraVolumesSystem }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Topology spread across 2 AZs — hard constraint (DoNotSchedule)
+      # SA NFR: availability_99_9_pct_bds · impl-notes §9.1
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

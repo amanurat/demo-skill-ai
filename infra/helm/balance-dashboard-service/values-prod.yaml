@@ -1,0 +1,61 @@
+# =============================================================================
+# balance-dashboard-service — Production overrides
+#
+# Apply on top of values.yaml:
+#   helm upgrade --install balance-dashboard-service-prod \
+#     ./infra/helm/balance-dashboard-service \
+#     -f infra/helm/balance-dashboard-service/values-prod.yaml \
+#     --namespace banking-prod \
+#     --set image.tag=<semver-or-digest>
+#
+# Rollback:
+#   helm rollback balance-dashboard-service-prod --namespace banking-prod
+#
+# NOTE: feature flag is false in prod until BoT sign-off.
+# The service IS deployed but returns 501 Not Implemented on every request.
+# This allows ops to verify the pod is healthy without exposing the feature.
+# Flip to true only after BoT approval is recorded in PM risk register.
+# =============================================================================
+
+config:
+  springProfile: prod
+  environment: prod
+  logLevel: WARN
+
+  # Feature flag: prod = false per impl-notes §5 + SA security_feature_flag_disabled_in_non_staging
+  # DISABLED STATE: returns HTTP 501 Not Implemented (not 404)
+  # Reason: distinguishes "feature disabled" from "URL typo" in ops logs
+  featureFlag:
+    balanceDashboardEnabled: "false"   # prod=false until BoT sign-off
+
+  redis:
+    host: "redis-shared.banking-prod.svc.cluster.local"
+    port: "6379"
+
+  kafka:
+    bootstrapServers: "kafka.kafka.svc.cluster.local:9092"
+
+  accountService:
+    url: "http://account-service.banking-prod.svc.cluster.local:8080"
+
+  otel:
+    enabled: true
+    endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+    samplingRate: "0.1"   # 10% sampling in prod under load
+
+# Production: 3 replicas minimum for higher HA margin
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  customMetrics:
+    enabled: true
+    metricName: balance_dashboard_requests_total
+    targetAverageValue: "30"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2

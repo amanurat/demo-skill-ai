@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+data:
+  environment: {{ .Values.config.environment | quote }}
+
+  # Feature flag — see values.yaml and values-prod.yaml for per-env setting
+  # staging: "true" (controller bean registered — feature reachable)
+  # prod:    "false" (BalanceDashboardDisabledController registered — returns 501)
+  # impl-notes §5: 501 Not Implemented, not 404
+  feature.balance-dashboard.enabled: {{ .Values.config.featureFlag.balanceDashboardEnabled | quote }}
+
+  # Redis (non-secret portions)
+  redis.host: {{ .Values.config.redis.host | quote }}
+  redis.port: {{ .Values.config.redis.port | quote }}
+
+  # Kafka (non-secret portions)
+  kafka.bootstrap-servers: {{ .Values.config.kafka.bootstrapServers | quote }}
+  kafka.audit-topic: {{ .Values.config.kafka.topic.auditEventRecorded | quote }}
+
+  # Apicurio schema registry — v2 schema must be registered by D6 (SA-RISK-002)
+  kafka.schema-registry-url: {{ .Values.config.kafka.schemaRegistry.url | quote }}
+
+  # Account-service upstream
+  account-service.url: {{ .Values.config.accountService.url | quote }}
+
+  # Management server
+  management.port: {{ .Values.config.management.port | quote }}
+  management.address: {{ .Values.config.management.address | quote }}
+
+  # Swagger UI disabled in non-local environments (Security)
+  springdoc.swagger-ui.enabled: {{ .Values.config.springdoc.swaggerUiEnabled | quote }}
+
+  # Log level
+  log.level: {{ .Values.config.logLevel | quote }}

@@ -1,0 +1,65 @@
+{{- if .Values.autoscaling.enabled }}
+# =============================================================================
+# HPA — balance-dashboard-service
+# SA NFR: scalability_50_peak_concurrent
+# Dual-metric scaling:
+#   1. CPU utilization (70% target) — standard JVM workload indicator
+#   2. Custom metric: balance_dashboard_requests_total rate > 30/s/pod
+#      Exposed via prometheus-adapter (custom.metrics.k8s.io API)
+#      Prometheus adapter config must include this metric namespace.
+#
+# minReplicas: 2 (>= PDB minAvailable + 1; prevents deadlock during drain)
+# maxReplicas: 8 (capped at 8 × 16 = 128 Redis connections; see redis-pool-risk)
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "balance-dashboard-service.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    # Metric 1: CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+
+    {{- if .Values.autoscaling.customMetrics.enabled }}
+    # Metric 2: Custom — balance_dashboard_requests_total rate per pod
+    # Requires prometheus-adapter with this metric in its custom-rules config.
+    # Scaleout trigger: average rate > 30 req/s/pod (SA NFR scalability_50_peak_concurrent)
+    - type: Pods
+      pods:
+        metric:
+          name: {{ .Values.autoscaling.customMetrics.metricName }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.customMetrics.targetAverageValue }}
+    {{- end }}
+
+  behavior:
+    scaleUp:
+      # Scale up aggressively to absorb traffic spikes
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      # Scale down conservatively — avoid pod thrashing during sustained load
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+{{- end }}

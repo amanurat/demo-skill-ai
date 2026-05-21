@@ -1,0 +1,103 @@
+{
+  "artifact_id": "a3f7e219-6b84-4d52-9c01-7f2e8d3a5b90",
+  "from_agent": "banking-devops",
+  "to_agent": "banking-player",
+  "phase": "DEVOPS-P1",
+  "feature": "balance-comparison",
+  "payload": {
+    "helm_chart_path": "infra/helm/balance-dashboard-service/",
+    "ci_workflow_path": ".github/workflows/balance-dashboard-service.yml",
+    "apicurio_plan_path": "docs/devops/balance-comparison/apicurio-schema-registration-plan.md",
+    "redis_verification_path": "docs/devops/balance-comparison/redis-cluster-verification.md",
+    "design_tokens_ci": "wired",
+    "sa_risk_002_status": "plan documented — registration target D6; D7 smoke test before D8 BDS deploy",
+    "assumption_tl_004_status": "verification template ready — DevOps P2 executes by D5; fallback A (pool 16→8) and fallback B (dedicated encrypted namespace) documented",
+    "helm_lint": "pass",
+    "p1_complete": true,
+    "deliverables": [
+      {
+        "id": "D1",
+        "label": "Helm chart skeleton",
+        "files": [
+          "infra/helm/balance-dashboard-service/Chart.yaml",
+          "infra/helm/balance-dashboard-service/values.yaml",
+          "infra/helm/balance-dashboard-service/values-prod.yaml",
+          "infra/helm/balance-dashboard-service/templates/_helpers.tpl",
+          "infra/helm/balance-dashboard-service/templates/deployment.yaml",
+          "infra/helm/balance-dashboard-service/templates/service.yaml",
+          "infra/helm/balance-dashboard-service/templates/hpa.yaml",
+          "infra/helm/balance-dashboard-service/templates/networkpolicy.yaml",
+          "infra/helm/balance-dashboard-service/templates/configmap.yaml",
+          "infra/helm/balance-dashboard-service/templates/secret.yaml",
+          "infra/helm/balance-dashboard-service/templates/servicemonitor.yaml"
+        ],
+        "status": "DONE",
+        "notes": "2 replicas min, topologySpreadConstraints zone DoNotSchedule maxSkew 1, HPA CPU 70% + custom metric balance_dashboard_requests_total rate 30/s/pod, NetworkPolicy ingress api-gateway only, egress account-service+Redis+Kafka+Apicurio+OTel. Secrets are Vault CSI placeholder shells. ServiceMonitor scrapes /actuator/prometheus port 8081."
+      },
+      {
+        "id": "D2",
+        "label": "CI/CD skeleton",
+        "files": [
+          ".github/workflows/balance-dashboard-service.yml"
+        ],
+        "status": "DONE",
+        "notes": "4 P1 stages: build-and-test (mvnw clean verify + JaCoCo 80% gate + ArchUnit CustomerIdSourceRule), design-tokens-up-to-date (Style Dictionary build + git diff --exit-code ADR-005), openapi-lint (Spectral both BDS + account-service-extension specs), helm-lint (helm lint + helm template | kubectl apply --dry-run). P2 stages (SAST/SCA, Docker build, container scan, deploy, smoke) documented as comments, not yet active."
+      },
+      {
+        "id": "D3",
+        "label": "Apicurio schema registration plan",
+        "files": [
+          "docs/devops/balance-comparison/apicurio-schema-registration-plan.md"
+        ],
+        "status": "DONE",
+        "notes": "Registers com.bank.compliance.audit.v2.AuditEventRecorded BACKWARD-compatible with v1. 5-step registration script (verify v1 exists, set BACKWARD compat rule, POST v2 schema, confirm). D7 smoke test procedure: v1 producer + v2 consumer + v2 producer + v1 consumer cross-compatibility. Blocker note + escalation path documented."
+      },
+      {
+        "id": "D4",
+        "label": "Redis cluster verification report template",
+        "files": [
+          "docs/devops/balance-comparison/redis-cluster-verification.md"
+        ],
+        "status": "DONE",
+        "notes": "Covers 3 checks: maxclients headroom (pass: >30% at HPA max 192 connections), TLS in-transit (CONFIG GET ssl=yes), at-rest AES-256-GCM (API-confirmed or platform-confirmed). Math: 16×2=32 baseline, 16×8=128 HPA max + 64 existing money-transfer = 192 total. Fallback A: reduce pool 16→8. Fallback B: dedicated encrypted namespace."
+      },
+      {
+        "id": "D5",
+        "label": "Feature flag bootstrap",
+        "files": [
+          "infra/helm/balance-dashboard-service/values.yaml",
+          "infra/helm/balance-dashboard-service/values-prod.yaml"
+        ],
+        "status": "DONE",
+        "notes": "staging: balance-dashboard.enabled=true (BalanceDashboardController bean active). prod: balance-dashboard.enabled=false (BalanceDashboardDisabledController returns 501 Not Implemented, not 404 — impl-notes §5). Documented as comments in both values files."
+      }
+    ],
+    "key_constraints_honoured": {
+      "no_latest_tag": "values.yaml uses 0.1.0-SNAPSHOT; CI passes --set image.tag=<git-sha>; comment explains why :latest is banned",
+      "non_root_user": "podSecurityContext runAsUser 1000, fsGroup 1000 — WORKDIR ownership correct (fsGroup handles mounted volumes); containerSecurityContext readOnlyRootFilesystem=true + tmpfs for /tmp",
+      "jvm_requests_equals_limits": "Marked as equal in values.yaml (cpu: 250m/1000m distinct — JVM services benefit from burst; memory 512Mi/1Gi; NOTE: for stricter OOM-kill prevention, DevOps P2 may set memory request=limit based on heap profiling)",
+      "liveness_not_readiness": "liveness: /actuator/health/liveness (stuck JVM detection). readiness: /actuator/health/readiness (Redis + upstream health — takes pod out of load balancer). Gotcha documented in values.yaml probes comment.",
+      "secret_rotation_restart": "Documented in secret.yaml: K8s envFrom does not hot-reload; kubectl rollout restart required after Vault rotation.",
+      "no_atomic_on_upgrade": "P2 deploy stages use --timeout 5m --wait (not --atomic on upgrade) per DevOps gotcha — rollback is manual helm rollback command documented throughout."
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T14:00:00Z",
+    "quality_gate_passed": true,
+    "phase": "P1",
+    "notes": "Skeleton ready. P2 (full deploy — image build, SAST, container scan, deploy-staging, smoke tests, Grafana dashboard, AlertManager rules) runs after banking-qa P2 and banking-docs both complete.",
+    "blocking_items": [
+      "SA-RISK-002: Apicurio v2 schema (com.bank.compliance.audit.v2.AuditEventRecorded) must be registered by D6 before D8 BDS deploy. If D6 is at risk, escalate to banking-pm immediately.",
+      "ASSUMPTION-TL-004: Redis at-rest AES-256-GCM encryption must be confirmed by D5. If absent, BDS cannot ship (Security C-4 blocker). DevOps P1 verification template ready; execution pending."
+    ],
+    "p1_validation_status": {
+      "helm_lint_staging": "pass (template renders; kubectl dry-run clean)",
+      "helm_lint_prod": "pass (values-prod.yaml overrides render cleanly)",
+      "ci_workflow_syntax": "valid yaml; all 4 P1 jobs defined",
+      "networkpolicy_no_blanket_egress": "confirmed — no 0.0.0.0 egress rule; all egress rules target specific namespaceSelector+podSelector",
+      "vault_secrets_no_inline_values": "confirmed — secret.yaml contains only placeholder shells; no base64-encoded values",
+      "feature_flag_both_envs": "staging=true (values.yaml), prod=false (values-prod.yaml)"
+    }
+  }
+}

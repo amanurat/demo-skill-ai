@@ -1,0 +1,145 @@
+# =============================================================================
+# NetworkPolicy — balance-dashboard-service
+# Implements least-privilege network segmentation
+#
+# INGRESS (who can reach BDS):
+#   - api-gateway pods only (namespace: banking-staging label)
+#   - Prometheus (management port 8081 only) — for ServiceMonitor scrape
+#
+# EGRESS (what BDS can reach):
+#   - account-service (port 8080) — AccountClient batched call
+#   - Redis shared cluster (port 6379) — Lettuce connection pool
+#   - Kafka brokers (port 9092) — KafkaAuditEventPublisher fire-and-forget
+#   - Apicurio schema registry (port 8080) — Avro v2 schema validation at startup
+#   - OTel collector (ports 4317 gRPC, 4318 HTTP) — traces + metrics
+#   - DNS (port 53 UDP/TCP) — service discovery
+#
+# ALL other ingress and egress is DENIED by default.
+# NO blanket 0.0.0.0 egress allowed.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "balance-dashboard-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # ---------------------------------------------------------------------------
+  # Ingress rules
+  # ---------------------------------------------------------------------------
+  ingress:
+    # Allow traffic ONLY from api-gateway pods
+    # SA tech_choices.deployment: "NetworkPolicy ingress from api-gateway only"
+    # impl-notes §9.1: ingress: api-gateway only
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              banking.example.com/env: staging
+          podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus scrape on management port (observability namespace only)
+    # ServiceMonitor scrapes /actuator/prometheus on port 8081
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8081
+
+  # ---------------------------------------------------------------------------
+  # Egress rules (allow-list — no blanket 0.0.0.0 egress)
+  # ---------------------------------------------------------------------------
+  egress:
+    # DNS — required for all service discovery (Kubernetes internal DNS)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # account-service — AccountClientAdapter (listAccountsByCustomer batched call)
+    # SA SUBDEC-002: single batched call per request
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              banking.example.com/env: staging
+          podSelector:
+            matchLabels:
+              app: account-service
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Redis shared cluster — Lettuce connection pool (16 conn/pod)
+    # impl-notes §4: REDIS_PORT default 6379; TLS enabled (ssl.enabled=true)
+    # redis-pool-risk: 16×2=32 baseline, 16×8=128 at HPA peak
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Kafka brokers — KafkaAuditEventPublisher async fire-and-forget (ADR-007)
+    # Topic: audit.event-recorded / acks=1 / idempotent producer
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+
+    # Apicurio schema registry — Avro v2 deserializer validation at startup
+    # SA-RISK-002 BLOCKER: v2 schema MUST be registered before BDS pods start.
+    # If Apicurio is unreachable at startup, Avro serializer rejects and pod fails.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: apicurio
+          podSelector:
+            matchLabels:
+              app: apicurio-registry
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # OpenTelemetry Collector — distributed traces + metrics export
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317   # gRPC OTLP
+        - protocol: TCP
+          port: 4318   # HTTP OTLP

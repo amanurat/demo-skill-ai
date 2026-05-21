@@ -1,0 +1,27 @@
+apiVersion: v2
+name: balance-dashboard-service
+description: |
+  Helm chart for balance-dashboard-service microservice.
+  Account Balance Comparison Dashboard — read-only aggregator (CQRS read-side).
+  Feature: balance-comparison · Sprint: SPRINT-2026-Q2-BC-01
+  Deploys to banking-staging and banking-prod namespaces.
+  Feature flag: balance-dashboard.enabled=true (staging), false (prod until BoT sign-off).
+type: application
+version: 0.1.0
+appVersion: "0.1.0-SNAPSHOT"
+
+keywords:
+  - banking
+  - balance-dashboard
+  - microservice
+  - spring-boot
+  - read-model
+
+maintainers:
+  - name: platform-banking
+    email: platform-banking@example.com
+
+annotations:
+  artifacthub.io/changes: |
+    - kind: added
+      description: "P1 skeleton — staging-ready pending QA P2 sign-off (balance-comparison feature)"

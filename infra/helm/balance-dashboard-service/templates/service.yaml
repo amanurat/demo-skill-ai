@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # ClusterIP only — balance-dashboard-service is NOT directly exposed externally.
+  # All inbound traffic routes through api-gateway only (NetworkPolicy enforces this).
+  # The api-gateway handles TLS termination + JWT validation + X-Customer-Id injection.
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.service.managementPort }}
+      targetPort: management
+      protocol: TCP
+      name: management
+  selector:
+    {{- include "balance-dashboard-service.selectorLabels" . | nindent 4 }}

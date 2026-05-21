@@ -1,0 +1,49 @@
+# =============================================================================
+# ServiceMonitor — balance-dashboard-service
+# Prometheus Operator scrape configuration
+#
+# Scrape endpoint: /actuator/prometheus on management port 8081
+# Convention: same as transfer-service (port 9090 was transfer-service;
+# BDS uses 8081 per impl-notes §9.4 "money-transfer convention port 8081")
+#
+# Metrics namespace: balance_dashboard_*
+# Key metrics scraped:
+#   - balance_dashboard_requests_total          — request counter (also drives HPA custom metric)
+#   - balance_dashboard_duration_ms             — histogram (p95 SLA NFR)
+#   - balance_dashboard_cache_hit_ratio         — cache effectiveness (ADR-002 target > 70%)
+#   - balance_dashboard_audit_events_total      — compliance sentinel (must not be 0/2min)
+#   - balance_dashboard_excluded_accounts_total — eligibility filter counter (BoT compliance)
+#   - balance_dashboard_cache_miss_reason_total — Redis fail-open diagnostic
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "balance-dashboard-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "balance-dashboard-service.labels" . | nindent 4 }}
+    # This label must match the Prometheus Operator's serviceMonitorSelector
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      {{- include "balance-dashboard-service.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+      scheme: http
+      # Honor labels from the scraped metrics (avoids dropping BDS custom labels)
+      honorLabels: false
+      relabelings:
+        # Add environment label for Grafana dashboard filtering
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - targetLabel: service
+          replacement: balance-dashboard-service

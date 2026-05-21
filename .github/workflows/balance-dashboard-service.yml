@@ -1,0 +1,272 @@
+# =============================================================================
+# CI Pipeline — balance-dashboard-service (Phase 1 skeleton)
+# Feature: balance-comparison · Sprint: SPRINT-2026-Q2-BC-01
+#
+# Stages (P1 — shift-left, no deploy yet):
+#   1. build-and-test          — ./mvnw clean verify + JaCoCo 80% gate + ArchUnit
+#   2. design-tokens-up-to-date — Style Dictionary build; fail if outputs stale
+#   3. openapi-lint             — Spectral lint BDS + account-service-extension OpenAPI
+#   4. helm-lint                — helm lint balance-dashboard-service chart
+#
+# P2 stages (after banking-qa P2 sign-off — NOT in this file yet):
+#   5. sast-sca           — Semgrep SAST + Trivy FS + OWASP DC
+#   6. build-image        — Docker Buildx multi-arch (non-root, distroless base)
+#   7. container-scan     — Trivy image scan (exit 1 on HIGH/CRITICAL)
+#   8. push-registry      — cosign sign + SBOM
+#   9. deploy-staging     — helm upgrade + --timeout 5m + --wait (NOT --atomic on upgrade)
+#  10. smoke-tests        — GET /api/v1/balance-dashboard (expect 200 with feature flag on)
+#  11. manual-gate        — prod deploy requires BoT sign-off approval
+#
+# Paths that trigger this workflow:
+#   - backend/balance-dashboard-service/**        — service code
+#   - common-libs/account-client-lib/**           — shared lib BDS depends on
+#   - infra/helm/balance-dashboard-service/**     — chart changes
+#   - tools/design-tokens/**                      — Style Dictionary config + scripts
+#   - docs/design/_shared/tokens.json             — source tokens (triggers stale check)
+#
+# Secrets required (GitHub Actions secrets — configure before P2):
+#   GHCR_TOKEN          — GitHub Container Registry write token
+#   KUBECONFIG_STAGING  — base64-encoded kubeconfig for banking-staging
+#   SEMGREP_APP_TOKEN   — Semgrep cloud token (P2)
+#   SMOKE_TEST_JWT      — valid JWT with scope accounts:read for staging smoke test (P2)
+# =============================================================================
+
+name: balance-dashboard-service
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+      - "stage/**"
+      - "feat/**"
+    paths:
+      - "backend/balance-dashboard-service/**"
+      - "common-libs/account-client-lib/**"
+      - "infra/helm/balance-dashboard-service/**"
+      - "tools/design-tokens/**"
+      - "docs/design/_shared/tokens.json"
+      - ".github/workflows/balance-dashboard-service.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/balance-dashboard-service/**"
+      - "common-libs/account-client-lib/**"
+      - "infra/helm/balance-dashboard-service/**"
+      - "tools/design-tokens/**"
+      - "docs/design/_shared/tokens.json"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "20"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/bank/balance-dashboard-service
+  HELM_RELEASE_STAGING: balance-dashboard-service-staging
+  K8S_NAMESPACE_STAGING: banking-staging
+
+# ===========================================================================
+# Stage 1 — Build and Test
+# ./mvnw clean verify runs: unit tests + integration tests + JaCoCo report
+# Includes ArchUnit (CustomerIdSourceRule — ADR-006) as part of normal test run
+# JaCoCo minimum: 80% line coverage (fail-at-end collects all failures first)
+# ===========================================================================
+jobs:
+  build-and-test:
+    name: "Build and Test (BE)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Pre-pull Testcontainers images (Redis + Kafka)
+        run: |
+          docker pull redis:7-alpine
+          docker pull confluentinc/cp-kafka:7.5.0
+
+      - name: Run full verify (unit + integration + ArchUnit + JaCoCo)
+        # -pl: only build balance-dashboard-service and its changed dependencies
+        # --fail-at-end: collect all test failures before reporting (better DX)
+        # Testcontainers: Redis (impl-notes §4) + Kafka (impl-notes §3/ADR-007)
+        run: |
+          ./mvnw clean verify \
+            -pl backend/balance-dashboard-service \
+            -am \
+            --fail-at-end \
+            -B
+        env:
+          TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+          DOCKER_HOST: unix:///var/run/docker.sock
+
+      - name: Enforce JaCoCo 80% line coverage gate
+        # jacoco:check is wired in the BDS pom.xml with minimum 0.80 line coverage.
+        # This step makes the gate explicit in the CI log even if mvn verify runs it.
+        run: |
+          ./mvnw jacoco:check \
+            -pl backend/balance-dashboard-service \
+            -B
+        continue-on-error: false
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: backend/balance-dashboard-service/target/site/jacoco/
+          retention-days: 14
+
+      - name: Upload Surefire + Failsafe results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            backend/balance-dashboard-service/target/surefire-reports/
+            backend/balance-dashboard-service/target/failsafe-reports/
+          retention-days: 14
+
+  # ===========================================================================
+  # Stage 2 — Design Tokens Up-To-Date
+  # Regenerates Style Dictionary outputs and fails if they differ from committed.
+  # Enforces ADR-005 §2.3: CI fails on stale generated outputs.
+  # Source: docs/design/_shared/tokens.json
+  # Outputs checked: frontend/src/styles/tokens.scss, frontend/src/styles/tokens.css
+  # ===========================================================================
+  design-tokens-up-to-date:
+    name: "Design Tokens — Stale Check (ADR-005)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: tools/design-tokens/package-lock.json
+
+      - name: Install Style Dictionary dependencies
+        run: npm install --prefix tools/design-tokens
+
+      - name: Build design tokens
+        # Regenerates frontend/src/styles/tokens.scss and tokens.css
+        # from docs/design/_shared/tokens.json via Style Dictionary
+        run: npm run tokens:build --prefix tools/design-tokens
+
+      - name: Assert generated outputs match committed files
+        # git diff --exit-code fails (exit 1) if any tracked file was modified
+        # by the tokens:build step. This catches cases where tokens.json was
+        # updated but generated files were not regenerated before the PR.
+        run: |
+          git diff --exit-code frontend/src/styles/tokens.scss \
+                               frontend/src/styles/tokens.css \
+          || (echo "ERROR: Design token outputs are stale. Run 'npm run tokens:build --prefix tools/design-tokens' and commit the generated files." && exit 1)
+
+  # ===========================================================================
+  # Stage 3 — OpenAPI Lint (Spectral)
+  # Lints both OpenAPI specs produced by banking-tech-lead (TL-001).
+  # Ruleset: .spectral.yml at repo root (or banking-specific rules).
+  # Fail on any ERROR-level finding.
+  # ===========================================================================
+  openapi-lint:
+    name: "OpenAPI Lint (Spectral)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Spectral CLI
+        run: npm install -g @stoplight/spectral-cli
+
+      - name: Lint balance-dashboard-service OpenAPI spec
+        run: |
+          spectral lint \
+            docs/tech-lead/balance-comparison/openapi/balance-dashboard-service.openapi.yaml \
+            --ruleset .spectral.yml \
+            --fail-severity error
+
+      - name: Lint account-service extension OpenAPI spec
+        run: |
+          spectral lint \
+            docs/tech-lead/balance-comparison/openapi/account-service-extension.openapi.yaml \
+            --ruleset .spectral.yml \
+            --fail-severity error
+
+  # ===========================================================================
+  # Stage 4 — Helm Lint
+  # Validates Helm chart syntax and template rendering.
+  # Runs helm lint + helm template | kubectl apply --dry-run=client to catch
+  # K8s schema validation errors before any real deploy attempt.
+  # ===========================================================================
+  helm-lint:
+    name: "Helm Lint + Dry-Run"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Set up kubectl (for dry-run validation)
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: helm lint (default values / staging)
+        run: |
+          helm lint infra/helm/balance-dashboard-service/ \
+            --strict \
+            --set image.tag=0.1.0-SNAPSHOT
+
+      - name: helm lint (prod values override)
+        run: |
+          helm lint infra/helm/balance-dashboard-service/ \
+            --strict \
+            --values infra/helm/balance-dashboard-service/values-prod.yaml \
+            --set image.tag=0.1.0-SNAPSHOT
+
+      - name: helm template + kubectl dry-run (staging)
+        # Renders the chart and pipes to kubectl apply --dry-run=client
+        # Catches K8s resource schema validation errors without a real cluster
+        run: |
+          helm template balance-dashboard-service-staging \
+            infra/helm/balance-dashboard-service/ \
+            --namespace banking-staging \
+            --set image.tag=0.1.0-SNAPSHOT \
+          | kubectl apply --dry-run=client -f -
+
+      - name: helm template + kubectl dry-run (prod)
+        run: |
+          helm template balance-dashboard-service-prod \
+            infra/helm/balance-dashboard-service/ \
+            --namespace banking-prod \
+            --values infra/helm/balance-dashboard-service/values-prod.yaml \
+            --set image.tag=0.1.0-SNAPSHOT \
+          | kubectl apply --dry-run=client -f -
+
+  # ===========================================================================
+  # Rollback reference (P2 — documented here for operator awareness)
+  # After P2 deploy-staging runs:
+  #   helm rollback balance-dashboard-service-staging --namespace banking-staging
+  # After P2 deploy-prod runs:
+  #   helm rollback balance-dashboard-service-prod --namespace banking-prod
+  # ===========================================================================
