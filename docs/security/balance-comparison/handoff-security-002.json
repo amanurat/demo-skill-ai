@@ -1,0 +1,125 @@
+{
+  "artifact_id": "c7f2b9e1-4d3a-4f8b-9e6c-2a1d5b8e3f4c",
+  "from_agent": "banking-security",
+  "to_agent": "banking-player",
+  "phase": "SECURITY",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "approved",
+    "sast_status": "clean",
+    "critical_cves": 0,
+    "secrets_in_code": false,
+    "pii_in_logs": false,
+    "stride_complete": true,
+    "findings": [
+      {
+        "id": "F-1",
+        "severity": "high",
+        "owasp_category": "A09:2021-Security-Logging-and-Monitoring-Failures",
+        "cwe": "CWE-532",
+        "prior_status": "blocking",
+        "current_status": "resolved",
+        "files": [
+          "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/rest/LogMasking.java",
+          "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/rest/BalanceDashboardController.java",
+          "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/application/service/BalanceDashboardService.java",
+          "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/client/AccountClientAdapter.java",
+          "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/cache/RedisCacheRepository.java",
+          "backend/balance-dashboard-service/src/test/java/com/bank/balancedashboard/unit/LogMaskingTest.java"
+        ],
+        "description": "customerId/accountId UUIDs and Redis cache keys logged unmasked across 4 files at DEBUG/WARN — PDPA §22 violation.",
+        "verification": "All call sites now wrap the bound argument in LogMasking.maskId(UUID/String) or LogMasking.maskKey(String). Unit tests in LogMaskingTest assert FULL_UUID_PATTERN is NEVER present in the masked output. LogMasking has no domain-layer imports (only java.util.UUID)."
+      },
+      {
+        "id": "F-2",
+        "severity": "medium",
+        "owasp_category": "A09:2021-Security-Logging-and-Monitoring-Failures",
+        "cwe": "CWE-532",
+        "prior_status": "blocking",
+        "current_status": "resolved",
+        "files": [
+          "backend/balance-dashboard-service/src/main/resources/logback-spring.xml"
+        ],
+        "description": "No Logback masking filter present; defense-in-depth against future PII log additions absent.",
+        "verification": "logback-spring.xml created with profile-aware appenders (dev/default, staging, prod). Both full-UUID regex ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) and 10-16 digit sequence regex (\\b\\d{10,16}\\b) applied via Logback <replace> in all three profiles. TODO comment references OBS-042 ticket for observability-lib MaskingConverter migration."
+      },
+      {
+        "id": "F-3",
+        "severity": "medium",
+        "blocking": false,
+        "owasp_category": "A07:2021-Identification-and-Authentication-Failures",
+        "cwe": "CWE-922",
+        "prior_status": "non-blocking",
+        "current_status": "unchanged",
+        "files": ["frontend/src/app/services/auth.service.ts:22-23,46-47"],
+        "description": "JWT in sessionStorage — XSS-recoverable. No XSS sinks in feature.",
+        "remediation": "Backlog ticket BC-DEBT-002 — migrate to HttpOnly cookie + BFF in v1.1. Accepted risk for demo."
+      },
+      {
+        "id": "F-4",
+        "severity": "low",
+        "blocking": false,
+        "prior_status": "non-blocking",
+        "current_status": "unchanged",
+        "files": ["docs/security/balance-comparison/early-review-consent-coverage.md (C-1)"],
+        "description": "Privacy notice / consent UI deferred post-demo.",
+        "remediation": "Tracked as C-1. No action for G8."
+      },
+      {
+        "id": "F-5",
+        "severity": "info",
+        "blocking": false,
+        "prior_status": "non-blocking",
+        "current_status": "unchanged",
+        "description": "Future rate-limiting must be at ingress on JWT sub, NOT X-Forwarded-For at app layer.",
+        "remediation": "DevOps P1 NetworkPolicy spec carries this constraint."
+      }
+    ],
+    "compliance": {
+      "pci_dss": {
+        "scope_affected": false,
+        "controls_met": ["N/A — no PAN, CVV, or cardholder data crosses this service"]
+      },
+      "gdpr": {
+        "pii_handled": true,
+        "lawful_basis": "performance of contract (account ownership) + legitimate interest (security audit)",
+        "retention": "logs: 90 days (DevOps log-shipper policy); audit Kafka topic: 7 years (regulatory)",
+        "consent_withdrawal": "deferred to v1.1 — tracked as C-1 / F-4"
+      }
+    },
+    "stride_summary": {
+      "spoofing": "pass",
+      "tampering": "pass",
+      "repudiation": "pass",
+      "information_disclosure": "pass — F-1+F-2 now resolved (call-site mask + logback safety net)",
+      "denial_of_service": "pass",
+      "elevation_of_privilege": "pass"
+    },
+    "owasp_top_10": {
+      "A01_broken_access_control": "pass",
+      "A02_cryptographic_failures": "pass",
+      "A03_injection": "pass",
+      "A04_insecure_design": "pass",
+      "A05_security_misconfiguration": "pass",
+      "A06_vulnerable_components": "pass",
+      "A07_auth_failures": "non-blocking (F-3 backlog)",
+      "A08_software_integrity": "pass",
+      "A09_logging_monitoring_failures": "pass (was fail in v1)",
+      "A10_ssrf": "n/a"
+    },
+    "report_path": "docs/security/balance-comparison/security-review-final-2.md"
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": true,
+    "iteration": 2,
+    "prior_handoff": "docs/security/balance-comparison/handoff-security-001.json",
+    "notes": "Both blocking findings (F-1 HIGH PII-in-logs, F-2 MEDIUM missing logback masking) verified resolved by refactoring iteration 3. C-2 (audit metadata-only) and C-3 (single X-Customer-Id reader) invariants preserved — AuditEventRecord.java and IborCheckFilter.java untouched. No new findings introduced. G8 PASS.",
+    "backlog_carry_forward": [
+      "BC-DEBT-002 — Migrate FE JWT storage to HttpOnly cookie + BFF (v1.1)",
+      "OBS-042 — Ship observability-lib MaskingConverter; replace inline <replace> regex in logback-spring.xml",
+      "C-1 — Privacy notice / consent UI (deferred to v1.1)"
+    ],
+    "next_agent": "banking-qa P2 + banking-docs (parallel)"
+  }
+}
