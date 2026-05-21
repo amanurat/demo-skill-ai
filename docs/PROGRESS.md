@@ -1,11 +1,11 @@
 # Progress — demo-skill-ai
 
-> Last updated: 2026-05-21 · Branch: `stage/02-balance-comparison` · Session: 3 (TL-001 complete)
+> Last updated: 2026-05-22 · Branch: `stage/02-balance-comparison` · Session: 5 (SPRINT COMPLETE — DoD PASS, recommendation: ship_to_staging)
 
 ## ⚡ Quick Resume
 
-**Main flow:** TL-001 COMPLETE (7/7 deliverables) → **3-way parallel fan-out:** `banking-frontend-dev` + `banking-backend-dev` + `banking-devops` P1
-**Side tracks:** US-MOCK-001..008 user stories drafted → **PAUSED:** `banking-frontend-dev` (Sonnet) for mockup HTML implementation
+**Main flow:** ✅ SPRINT COMPLETE — DoD PASS. Recommendation: ship to staging by 2026-05-31.
+**Side tracks:** none — await staging infra provisioning (RISK-007 escalation trigger: 2026-05-31)
 
 ---
 
@@ -31,11 +31,17 @@
 
 ## ⏭ Next
 
-- [ ] **3-way parallel fan-out** (TL-001 complete → unlocked):
-  - `banking-frontend-dev` — Angular Balance Comparison Dashboard + Style Dictionary tokens setup
-  - `banking-backend-dev` — Scaffold `balance-dashboard-service` Maven module (hexagonal arch, CustomerIdResolver, AuditEventPublisher, Resilience4j)
-  - `banking-devops` P1 — Helm chart skeleton + CI/CD + Apicurio v2 schema registration
-- [ ] (side track) `banking-frontend-dev` (Sonnet) → US-MOCK-001..008 mockup HTML files
+- [x] G4 Planning → task-plan.md (100% AC coverage, 130 test cases) ✅
+- [x] DevOps P1 → Helm chart + CI/CD + Apicurio plan ✅
+- [x] BE Dev → 6-layer hexagonal TDD (35+ tests, Security C-2/C-3/C-4) ✅
+- [x] FE Dev → 5-step Angular TDD (55 files, ADR-005 tokens, WCAG a11y) ✅
+- [x] Refactoring iteration 1 → 23 findings fixed (4 BE blockers, 3 FE blockers + majors) ✅
+- [x] **Review iteration 2** → both approved (BE iter 3, FE iter 2) ✅
+- [x] G7+G8 → banking-integration approved + banking-security approved (iter 2, after security refactoring) ✅
+- [x] **G9** → `banking-qa P2` (170 tests, 25/25 ACs) + `banking-docs` (4 deliverables) ✅
+- [x] G10 → `banking-devops P2` (Dockerfile, CI 10 stages, Grafana dashboard) ✅
+- [x] **Sprint close** → `banking-pm` DoD report — PASS, ship_to_staging ✅
+- [ ] **Next sprint** → staging infra provisioning → smoke tests → k6 perf → prod deploy
 
 ---
 
@@ -43,7 +49,7 @@
 
 | Track ID | What | Why paused | How to resume |
 |---|---|---|---|
-| **MOCKUP-TASK** | US-MOCK-001..008 HTML mockups using design tokens | User said "หยุดก่อน" after deciding to use Sonnet model | Switch to Sonnet → pick up at `banking-frontend-dev` invocation for Foundation (tokens.css + base CSS + README) + 5 MUST stories |
+| ~~**MOCKUP-TASK**~~ | ~~US-MOCK-001..008 HTML mockups using design tokens~~ | ✅ DONE — committed 28cc7d9 | — |
 
 ---
 
@@ -57,6 +63,9 @@
 
 > Append-only log of in-session choices that aren't in formal artifacts. Newest first.
 
+- **2026-05-22 (Session 5)** — SPRINT COMPLETE. G9 (QA P2: 170 tests + Docs: 4 deliverables) + G10 (DevOps P2: Dockerfile, CI 10 stages, Grafana) + Sprint close (DoD PASS, ship_to_staging). Residual risks: RISK-007 staging infra (escalation 2026-05-31), RISK-005 k6 perf, RISK-008/009 Apicurio + Redis TLS pre-prod. 15 carry-forward items for next sprint.
+- **2026-05-22 (Session 5, earlier)** — G7+G8 both cleared. Security refactoring iter 3 (LogMasking utility + logback-spring.xml) fixed F-1/F-2 blockers. G8 approved on second pass.
+- **2026-05-21 (Session 4)** — Implementation phase complete. G4→DevOps-P1→BE-Dev→FE-Dev→Refactoring-iter1 all committed. Iteration 2 reviewers running. Next: security+integration gate. MOCKUP-TASK DONE (commit 28cc7d9).
 - **2026-05-21 (Session 3)** — TL-001 completed in full. ADR-005 locks Style Dictionary as token generator; ADR-006 codifies CustomerIdResolver pattern (Security C-3); ADR-007 codifies AuditEventPublisher + contract test (Security C-2). 4 TL assumptions documented (non-blocking). 3-way dev fan-out unlocked.
 - **2026-05-21 (end of session — `จบ session`)** — Session ปิดอย่างเป็นทางการผ่าน session-continuity skill. 10 commits ทั้งหมด persisted. Next session: พิมพ์ `ถึงไหนแล้ว` เพื่อดูภาพรวม หรือ `ทำต่อ` เพื่อ resume TL ที่ค้าง.
 - **2026-05-21 (end of session)** — Session ปิดด้วยงานค้างที่ TL-001 partial. Persist ทั้งหมดก่อนปิดเครื่อง — TL ค้าง 4 deliverables ระบุชัดใน Next.
@@ -113,5 +122,19 @@
 | Designer P1 | ✅ true | 1 |
 | Designer P2 | ✅ true | 1 |
 | TL-001 | ✅ true (7/7 deliverables) | 1 |
+| G4 Planning | ✅ true (100% AC, 130 tests) | 1 |
+| DevOps P1 | ✅ true (Helm+CI+plans) | 1 |
+| BE Dev | ✅ true (6 layers, 35+ tests) | 1 |
+| FE Dev | ✅ true (5 steps, 55 files) | 1 |
+| Review iter 1 | ⏳ changes_requested (BE: 4 blockers, FE: 3 blockers) | 1 |
+| Refactoring iter 1 | ✅ true (23 findings fixed) | 1 |
+| Review iter 2 | ✅ true (BE iter 3, FE iter 2) | 2 |
+| Refactoring iter 2 (security) | ✅ true (F-1 + F-2 resolved) | 3 |
+| G7 Integration | ✅ true (0 drift findings) | 1 |
+| G8 Security | ✅ true (iter 2, after security fixes) | 2 |
+| G9 QA P2 | ✅ true (170 tests, 25/25 ACs) | 1 |
+| G9 Docs | ✅ true (4 deliverables) | 1 |
+| G10 DevOps P2 | ✅ true (pending staging infra) | 1 |
+| Sprint DoD | ✅ PASS — ship_to_staging | 1 |
 
-**Overall sprint health:** GREEN — all phases through TL-001 passed first iteration. Ready for 3-way dev fan-out.
+**Overall sprint health:** GREEN — SPRINT COMPLETE. Demo target: 2026-06-04. Staging infra needed by 2026-05-31.
