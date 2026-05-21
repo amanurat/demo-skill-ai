@@ -1,0 +1,161 @@
+{
+  "artifact_id": "a2131d74-ed9f-4d01-970c-807e620caff8",
+  "from_agent": "banking-reviewer-fe",
+  "to_agent": "banking-player",
+  "phase": "REVIEW",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "approved",
+    "iteration": 2,
+    "summary": "All 3 blockers and 6 majors from iteration 1 fixed correctly. 2 new minor findings (test coverage gap on AuthService + JSDoc note). No regressions. Ready for security + integration parallel gate.",
+    "findings": [
+      {
+        "id": "R-FE-001",
+        "severity": "blocker",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/components/empty-state/empty-state.component.html",
+        "line": 20,
+        "rule": "security: inline-event-handler / CSP",
+        "message": "Inline onerror=\"...\" replaced with Angular (error)=\"onImgError($event)\" binding. CSP-safe.",
+        "verification": "empty-state.component.ts:42-44 declares onImgError() method; grep returns zero hits for onerror in production source."
+      },
+      {
+        "id": "R-FE-002",
+        "severity": "blocker",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/components/error-retry-banner/error-retry-banner.component.html",
+        "line": 22,
+        "rule": "security: inline-event-handler / CSP",
+        "message": "Same pattern as R-FE-001 — Angular event binding + onImgError() on component class. CSP-safe.",
+        "verification": "error-retry-banner.component.ts:80-82."
+      },
+      {
+        "id": "R-FE-003",
+        "severity": "blocker",
+        "status": "fixed",
+        "file": "frontend/src/app/guards/auth.guard.ts",
+        "line": 25,
+        "rule": "security: jwt-in-localstorage",
+        "message": "localStorage fallback removed. New AuthService (providedIn: 'root', Signal-backed, sessionStorage-only) introduced. Guard delegates to authService.isAuthenticatedSnapshot(). Spec's localStorage-allows test case removed.",
+        "verification": "grep -rn localStorage frontend/src returns only documentation comments — zero functional reads/writes."
+      },
+      {
+        "id": "R-FE-004",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/pipes/balance-amount.pipe.ts",
+        "line": 37,
+        "rule": "banking: float-precision-on-balance",
+        "message": "parseFloat removed. ARIA-label path (precision-critical, spoken to user) now does string-based baht/satang extraction via buildAriaLabelFromString(). Display path retains Number() for Intl.NumberFormat (acceptable: banking balances far below 9e15 safe-integer boundary, documented in code).",
+        "verification": "New precision test added in pipes.spec.ts:106-112."
+      },
+      {
+        "id": "R-FE-005",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/services/dashboard.service.ts",
+        "line": 39,
+        "rule": "angular: deprecated-rxjs-operator",
+        "message": "Migrated from retryWhen to retry({ count, delay }). 401/403 short-circuit via throwError() in delay callback — never retried. Exponential backoff 1s/2s/4s preserved (verified in dashboard.service.spec.ts:128-167).",
+        "verification": "grep returns zero retryWhen hits anywhere in frontend/src."
+      },
+      {
+        "id": "R-FE-006",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.html",
+        "line": 73,
+        "rule": "banking: fragile-template-string-manipulation",
+        "message": "BalanceFormatResult extended with amountOnly: string. Pipe strips currency markers internally. Template reads balanceResult.amountOnly + renders ฿ from dedicated aria-hidden span. No .replace() chains in templates.",
+        "verification": "grep returns zero .replace('฿'/'THB') hits in template files."
+      },
+      {
+        "id": "R-FE-007",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/components/account-row/account-row.component.ts",
+        "line": 47,
+        "rule": "angular: anti-pattern / change-detection",
+        "message": "Pipes added to component providers[]; injected via inject() into private readonly fields. buildAriaLabel() uses injected pipe instances — no more `new <Pipe>()` calls. Intl.NumberFormat now constructed once per pipe instance.",
+        "verification": "grep for new <Pipe>() returns zero hits in production code."
+      },
+      {
+        "id": "R-FE-008",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/containers/dashboard-page/dashboard-page.component.ts",
+        "line": 163,
+        "rule": "banking: console.log-in-prod",
+        "message": "onRowSelect() body replaced with comment explaining v1.1 deferral. eslint-disable directive removed.",
+        "verification": "grep -rn console\\. frontend/src returns one comment-line hit, zero actual console.* calls."
+      },
+      {
+        "id": "R-FE-009",
+        "severity": "major",
+        "status": "fixed",
+        "file": "frontend/src/app/features/balance-comparison/components/loading-skeleton/loading-skeleton.component.html",
+        "line": 16,
+        "rule": "a11y: aria-hidden-on-listitem",
+        "message": "role=\"listitem\" removed from skeleton <li> rows. aria-hidden=\"true\" retained on rows. Parent <ul> still carries aria-busy=\"true\". Correct WCAG 2.1 AA composition.",
+        "verification": "loading-skeleton.component.spec.ts:37-47 asserts both aria-busy on list and aria-hidden on rows."
+      },
+      {
+        "id": "R-FE-021",
+        "severity": "minor",
+        "status": "new",
+        "file": "frontend/src/app/services/auth.service.ts",
+        "line": null,
+        "rule": "testing: missing-spec",
+        "message": "New AuthService introduced without a companion auth.service.spec.ts. clearAuth(), constructor sessionStorage-init, and isAuthenticated() Observable form lack direct tests.",
+        "suggested_fix": "Add auth.service.spec.ts (~20 LOC) covering constructor init, setAuthenticated/clearAuth roundtrip, and Observable emission on signal change."
+      },
+      {
+        "id": "R-FE-022",
+        "severity": "nit",
+        "status": "new",
+        "file": "frontend/src/app/services/auth.service.ts",
+        "line": 22,
+        "rule": "banking: session-init-on-construction",
+        "message": "_authenticated signal initialized once from sessionStorage at service construction. Safe today (providedIn:'root' singleton), but if any future login flow writes auth_token to sessionStorage without calling setAuthenticated(), signal will lag until reload.",
+        "suggested_fix": "Add JSDoc note stating all auth_token writes MUST go through AuthService.setAuthenticated()."
+      }
+    ],
+    "iteration_1_blockers_fixed": 3,
+    "iteration_1_majors_fixed": 6,
+    "new_blockers": 0,
+    "new_majors": 0,
+    "new_minors": 1,
+    "new_nits": 1,
+    "regression_sweep": {
+      "onerror_inline": "clean",
+      "innerHTML_binding": "clean (only spec DOM-read assertions)",
+      "bypassSecurityTrust": "clean",
+      "localStorage_functional": "clean (doc comments only)",
+      "retryWhen": "clean",
+      "parseFloat": "clean (one comment explaining Number() choice)",
+      "console_log": "clean (one comment line)",
+      "manual_pipe_construction": "clean (only in spec files)",
+      "template_replace_chains": "clean",
+      "retry_filter_401_403": "verified — throwError short-circuits in delay callback",
+      "loading_skeleton_a11y": "verified — aria-busy on parent retained, role=listitem removed from hidden children",
+      "authservice_singleton": "verified — providedIn:'root', no double-provisioning"
+    },
+    "metrics_checked": {
+      "build": "likely_pass",
+      "lint": "likely_pass",
+      "estimated_coverage": 0.85,
+      "a11y_violations": 0,
+      "security_blockers": 0
+    },
+    "review_report_path": "docs/review/balance-comparison/review-fe-002.md"
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T00:00:00Z",
+    "quality_gate_passed": true,
+    "quality_gate": "G5",
+    "next_agent": "banking-security (parallel with banking-integration)",
+    "previous_iteration_report": "docs/review/balance-comparison/review-fe-001.md",
+    "previous_iteration_handoff": "docs/review/balance-comparison/handoff-review-fe-001.json"
+  }
+}
