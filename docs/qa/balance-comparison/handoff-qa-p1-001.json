@@ -1,0 +1,181 @@
+{
+  "artifact_id": "f7b3d291-4e5a-4c18-9f2b-0d6e8c1a7345",
+  "from_agent": "banking-qa",
+  "to_agent": "banking-qa",
+  "phase": "TESTING",
+  "feature": "balance-comparison",
+  "payload": {
+    "qa_phase": "P1",
+    "phase_description": "Test plan complete (shift-left, parallel with SA and Designer P1). No automation code yet. QA P2 starts after banking-security approves code.",
+    "artifact_pointers": {
+      "test_plan": "docs/qa/balance-comparison/test-plan.md",
+      "test_cases": "docs/qa/balance-comparison/test-cases.md",
+      "risk_based_prioritization": "docs/qa/balance-comparison/risk-based-prioritization.md",
+      "handoff_json": "docs/qa/balance-comparison/handoff-qa-p1-001.json"
+    },
+    "input_artifact": {
+      "artifact_id": "c4e9f1b2-7a3d-4c85-b6f0-1e8d2a5c9047",
+      "from_agent": "banking-ba",
+      "feature": "balance-comparison"
+    },
+    "coverage_matrix": {
+      "total_test_cases": 71,
+      "breakdown_by_type": {
+        "unit": 22,
+        "integration": 18,
+        "contract": 4,
+        "e2e": 8,
+        "performance": 5,
+        "security": 8,
+        "a11y": 6
+      },
+      "breakdown_by_priority": {
+        "P0": 31,
+        "P1": 35,
+        "P2": 5
+      },
+      "stories_covered": [
+        "US-BC-001",
+        "US-BC-002",
+        "US-BC-003",
+        "US-BC-005"
+      ],
+      "total_ac_covered": 25,
+      "ac_per_story": {
+        "US-BC-001": 7,
+        "US-BC-002": 6,
+        "US-BC-003": 6,
+        "US-BC-005": 6
+      }
+    },
+    "banking_specific_must_haves": {
+      "idor_guard_403_plus_forbidden_audit": {
+        "covered": true,
+        "test_ids": ["TC-SEC-001", "TC-INT-018"]
+      },
+      "audit_on_every_read_cache_hit_and_miss": {
+        "covered": true,
+        "test_ids": ["TC-INT-009", "TC-INT-010"]
+      },
+      "get_idempotency_same_snapshot_within_ttl": {
+        "covered": true,
+        "test_ids": ["TC-INT-011"]
+      },
+      "ranking_determinism_balance_desc_accountid_asc_tiebreak": {
+        "covered": true,
+        "test_ids": ["TC-UNIT-005", "TC-INT-004"]
+      },
+      "dormant_filter_plus_audit_on_filtered_access": {
+        "covered": true,
+        "test_ids": ["TC-INT-006", "TC-UNIT-013"]
+      },
+      "account_type_filter_loan_credit_excluded": {
+        "covered": true,
+        "test_ids": ["TC-UNIT-004", "TC-INT-005"]
+      },
+      "stale_snapshot_degraded_mode_redis_unavailable": {
+        "covered": true,
+        "test_ids": ["TC-INT-012", "TC-INT-014", "TC-INT-015"]
+      },
+      "pdpa_data_minimization_masked_account_number_all_surfaces": {
+        "covered": true,
+        "test_ids": ["TC-SEC-004", "TC-SEC-005", "TC-E2E-006", "TC-UNIT-007"]
+      }
+    },
+    "performance_sla_targets": {
+      "warm_cache_p95_ms": 500,
+      "cold_cache_p95_ms": 800,
+      "warm_cache_p99_ms": 1000,
+      "cache_hit_ratio_pct": 70,
+      "error_rate_pct": 0.1,
+      "concurrent_vus": 50,
+      "test_duration_minutes": 5,
+      "fixture_accounts_per_customer": 10,
+      "environment": "staging",
+      "tool": "k6",
+      "perf_test_ids": ["TC-PERF-001", "TC-PERF-002", "TC-PERF-003", "TC-PERF-004", "TC-PERF-005"]
+    },
+    "coverage_targets": {
+      "overall_line_coverage_pct": 80,
+      "critical_financial_paths_line_coverage_pct": 95,
+      "branch_coverage_pct": 70,
+      "mutation_score_pct": 70,
+      "mutation_scope": "com.example.balancedashboard.domain.*, com.example.balancedashboard.application.*",
+      "contract_coverage": "100% of cross-service boundaries"
+    },
+    "tooling_plan": {
+      "unit_backend": "JUnit 5 + Mockito + AssertJ",
+      "unit_frontend": "Jest + Angular Testing Library",
+      "integration": "Spring Boot Test + Testcontainers (Postgres 16 + Redis 7 + Kafka)",
+      "account_client_mock": "WireMock (HTTP-level stub for Feign client)",
+      "async_assertions": "Awaitility (no Thread.sleep)",
+      "contract": "Pact JVM (consumer-driven contracts)",
+      "mutation": "PIT (pitest-maven-plugin 1.15.x)",
+      "coverage_report": "JaCoCo",
+      "e2e": "Playwright",
+      "a11y_automated": "axe-core via @axe-core/playwright + jest-axe",
+      "lighthouse": "lighthouse npm package via Playwright",
+      "performance": "k6 (scripts in infra/k6/balance-dashboard/)"
+    },
+    "gaps_flagged": [
+      {
+        "id": "GAP-001",
+        "description": "AC-003-E2 (Grafana panel observability) is not directly testable as a single automated assertion — recommend BA split into (a) metric emission test (automatable via Micrometer registry assertion) and (b) Grafana panel visual verification (manual QA).",
+        "severity": "low",
+        "action": "back-pressure to BA — minor AC refinement recommended",
+        "blocked": false
+      },
+      {
+        "id": "GAP-002",
+        "description": "TC-SEC-008 (PDPA consent scope verification) requires banking-security to confirm consent-registry API schema. Without this, the test cannot be automated.",
+        "severity": "medium",
+        "action": "invoke banking-security for early consent-coverage review at D2-D3 per RISK-003 mitigation",
+        "blocked": true,
+        "blocked_on": "banking-security consent-registry schema confirmation"
+      },
+      {
+        "id": "GAP-003",
+        "description": "TC-INT-015 (circuit breaker opens after N failures) depends on SA decision on Resilience4j threshold N. Test skeleton is ready but assertion value is placeholder.",
+        "severity": "low",
+        "action": "SA to document CB threshold in ADR; QA P2 fills in N before automation",
+        "blocked": false,
+        "depends_on": "SA ADR for Resilience4j threshold"
+      },
+      {
+        "id": "GAP-004",
+        "description": "TC-A11Y-005 (VoiceOver/TalkBack announcement) cannot be fully automated via axe-core alone — prosody and announcement text require manual test with physical device or simulator.",
+        "severity": "low",
+        "action": "planned as manual test case with scripted steps in test-cases.md",
+        "blocked": false
+      }
+    ],
+    "p2_gate_summary": "QA P2 starts ONLY after banking-security approves code. All 8 banking-specific must-haves above must be automated and green. Perf SLA (p95 warm < 500ms, cold < 800ms) must be validated on staging with 10-account fixture. Lighthouse a11y >= 90 with evidence attached.",
+    "deferred_feature_boundary": "US-BC-004 (multi-currency FX) is DEFERRED — TC-INT-017 verifies no FX fields leak into response."
+  },
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-05-21T10:30:00Z",
+    "quality_gate_passed": true,
+    "iteration": 1,
+    "previous_artifact_id": "c4e9f1b2-7a3d-4c85-b6f0-1e8d2a5c9047",
+    "notes": "QA P1 initial. Test plan, test cases (71 total), and risk-based prioritization produced in parallel with SA and Designer P1 per shift-left orchestration (RISK-004 mitigation). Quality gate passed: all 25 BA ACs have at least one test case mapped; all 8 banking-specific must-haves covered; perf + a11y + IDOR + audit + data-min explicitly listed. 4 gaps flagged to orchestrator — none are P0 blockers for QA P1 completion.",
+    "quality_gate_self_check": {
+      "every_ac_from_ba_has_at_least_one_test_case": true,
+      "all_25_acs_covered": true,
+      "idor_test_included": true,
+      "audit_on_cache_hit_and_miss_included": true,
+      "get_idempotency_included": true,
+      "ranking_determinism_included": true,
+      "dormant_filter_plus_audit_included": true,
+      "account_type_filter_loan_credit_excluded_included": true,
+      "stale_snapshot_degraded_mode_included": true,
+      "pdpa_data_minimization_masking_included": true,
+      "perf_sla_targets_explicitly_listed": true,
+      "a11y_test_cases_included": true,
+      "contract_tests_for_each_cross_service_boundary": true,
+      "test_plan_document_exists": true,
+      "risk_based_prioritization_document_exists": true
+    },
+    "blocked_on": null
+  }
+}
