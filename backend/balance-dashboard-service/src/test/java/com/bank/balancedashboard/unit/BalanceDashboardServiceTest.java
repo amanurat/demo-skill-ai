@@ -9,8 +9,8 @@ import com.bank.balancedashboard.domain.audit.Result;
 import com.bank.balancedashboard.domain.model.AccountType;
 import com.bank.balancedashboard.domain.model.AccountView;
 import com.bank.balancedashboard.domain.model.RankedDashboard;
+import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import com.bank.balancedashboard.domain.policy.Ranker;
-import com.bank.balancedashboard.infrastructure.client.UpstreamUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -129,14 +129,14 @@ class BalanceDashboardServiceTest {
     @Test
     @DisplayName("(4) upstreamFailure_returns503_emitsAuditError")
     void upstreamFailure_returns503_emitsAuditError() {
-        // Given: cache miss, AccountPort throws UpstreamUnavailableException
+        // Given: cache miss, AccountPort throws DashboardUnavailableException (domain exception)
         when(cachePort.get(CUSTOMER_ID)).thenReturn(Optional.empty());
         when(accountPort.fetchAccounts(CUSTOMER_ID))
-                .thenThrow(new UpstreamUnavailableException("timeout", "TIMEOUT"));
+                .thenThrow(new DashboardUnavailableException("timeout"));
 
-        // When / Then: UpstreamUnavailableException re-thrown
+        // When / Then: DashboardUnavailableException re-thrown (R-BE-002/003/004 fix)
         assertThatThrownBy(() -> service.loadDashboard(CUSTOMER_ID))
-                .isInstanceOf(UpstreamUnavailableException.class);
+                .isInstanceOf(DashboardUnavailableException.class);
 
         // CachePort.put() NEVER called on failure
         verify(cachePort, never()).put(any(), any());

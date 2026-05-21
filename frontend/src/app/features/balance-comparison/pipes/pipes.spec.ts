@@ -101,4 +101,19 @@ describe('BalanceAmountPipe', () => {
     expect(result.display).toBeTruthy();
     expect(result.ariaLabel).toContain('50 สตางค์');
   });
+
+  // R-FE-004: precision test — satang parsed from string, not float arithmetic
+  it('satang extracted from string directly — no float arithmetic precision loss', () => {
+    // 128540.25: if parsed as float, (128540.25 - 128540) * 100 can be 24.999...
+    // String-based extraction must return exactly 25
+    const result = pipe.transform('128540.25');
+    expect(result.ariaLabel).toContain('25 สตางค์');
+    expect(result.ariaLabel).not.toContain('24');
+  });
+
+  it('zero satang — only บาท portion in aria label', () => {
+    const result = pipe.transform('50000.00');
+    expect(result.ariaLabel).toContain('บาท');
+    expect(result.ariaLabel).not.toContain('สตางค์');
+  });
 });

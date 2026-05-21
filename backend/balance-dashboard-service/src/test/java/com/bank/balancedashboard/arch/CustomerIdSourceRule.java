@@ -2,6 +2,7 @@ package com.bank.balancedashboard.arch;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOptions;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -69,8 +71,8 @@ class CustomerIdSourceRule {
     /**
      * Deliberate-violation test fixture — confirms the ArchUnit rules FIRE on violations.
      *
-     * <p>This is mandatory per task-plan §Layer 6: "Deliberate-violation test fixture must
-     * also be present to confirm the rule fires."
+     * <p>This is mandatory per task-plan §Layer 6 and ADR-006 §2.4: "Deliberate-violation
+     * test fixture must also be present to confirm the rule fires."
      *
      * <p>The test imports a hypothetical violating class and verifies the rule rejects it.
      * Because we cannot write a real violating class (it would break the build), we verify
@@ -89,8 +91,31 @@ class CustomerIdSourceRule {
         // Verify IborCheckFilter is present (confirms the rule found something to analyze)
         boolean iborFilterExists = classes.stream()
                 .anyMatch(c -> c.getSimpleName().equals("IborCheckFilter"));
-        org.assertj.core.api.Assertions.assertThat(iborFilterExists)
+        assertThat(iborFilterExists)
                 .as("IborCheckFilter must exist for the ArchUnit rule to have meaning")
                 .isTrue();
+    }
+
+    /**
+     * R-BE-011 — Deliberate-violation fixture: verifies the ArchUnit rule fires on a
+     * real violation class loaded at test time from the violations sub-package.
+     *
+     * <p>The violating class {@code FakeViolatingService} resides in
+     * {@code src/test/java/com/bank/balancedashboard/arch/violations/} and contains a
+     * direct call to {@code request.getHeader(String)} outside of IborCheckFilter.
+     * ArchUnit must reject it, confirming the rule has teeth (ADR-006 §2.4).
+     */
+    @Test
+    @DisplayName("R-BE-011 — Rule fires on deliberate violation: FakeViolatingService calls getHeader")
+    void violationIsDetected() {
+        // Import ONLY the violation fixture (test-only class), not the whole production codebase
+        JavaClasses violationClasses = new ClassFileImporter(
+                new ImportOptions().with(ImportOptions.Predefined.DO_NOT_INCLUDE_ARCHIVES))
+                .importPackages("com.bank.balancedashboard.arch.violations");
+
+        // The rule MUST throw AssertionError when FakeViolatingService is present
+        assertThatThrownBy(() -> only_filter_reads_x_customer_id_header.check(violationClasses))
+                .isInstanceOf(AssertionError.class)
+                .as("Rule must fire on FakeViolatingService which calls request.getHeader(String)");
     }
 }

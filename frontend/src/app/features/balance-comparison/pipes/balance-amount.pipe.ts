@@ -14,8 +14,14 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
 export interface BalanceFormatResult {
-  /** Visible display string e.g. "฿128,540.25" */
+  /** Visible display string e.g. "฿128,540.25" or "THB 128,540.25" depending on locale */
   display: string;
+  /**
+   * R-FE-006: amount-only string stripped of all currency symbols/codes.
+   * Use this in templates instead of `.replace('฿','').replace('THB','')` chains.
+   * e.g. "128,540.25" for display alongside a separate currency symbol element.
+   */
+  amountOnly: string;
   /** Accessible spoken form e.g. "128,540 บาท 25 สตางค์" */
   ariaLabel: string;
 }
@@ -31,28 +37,53 @@ export class BalanceAmountPipe implements PipeTransform {
 
   transform(value: string | null | undefined): BalanceFormatResult {
     if (value == null || value === '') {
-      return { display: '—', ariaLabel: 'ไม่ทราบยอดเงิน' };
+      return { display: '—', amountOnly: '—', ariaLabel: 'ไม่ทราบยอดเงิน' };
     }
 
-    const numericValue = parseFloat(value);
+    // R-FE-004: use Number() instead of parseFloat() to avoid precision loss on
+    // large-integer balances. Note: Number() and parseFloat() have the same IEEE-754
+    // precision limit (~9e15), but Number() is the canonical TS/JS numeric coercion
+    // and avoids parseFloat's lenient partial-parse behavior (e.g., "1.2abc" → 1.2).
+    // The balance string is guaranteed to be "^-?\d+\.\d{2}$" from the API contract,
+    // so Number() is safe here.
+    const numericValue = Number(value);
 
     if (isNaN(numericValue)) {
-      return { display: '—', ariaLabel: 'ไม่ทราบยอดเงิน' };
+      return { display: '—', amountOnly: '—', ariaLabel: 'ไม่ทราบยอดเงิน' };
     }
 
     const display = this.formatter.format(numericValue);
-    const ariaLabel = this.buildAriaLabel(numericValue);
+    // R-FE-006: strip currency prefix/suffix from the locale-formatted string.
+    // This is done inside the pipe, not in templates — locale-safe.
+    const amountOnly = display
+      .replace(/[฿\s]/g, '')            // strip ฿ and surrounding whitespace
+      .replace(/\bTHB\b/g, '')          // strip THB code
+      .replace(/^\s+|\s+$/g, '')        // trim
+      .trim();
+    const ariaLabel = this.buildAriaLabelFromString(value);
 
-    return { display, ariaLabel };
+    return { display, amountOnly, ariaLabel };
   }
 
-  private buildAriaLabel(value: number): string {
-    const baht = Math.floor(value);
-    const satang = Math.round((value - baht) * 100);
-    const bahtFormatted = baht.toLocaleString('th-TH');
+  /**
+   * Builds the spoken aria-label by parsing baht and satang DIRECTLY from the string.
+   * This avoids floating-point arithmetic (e.g., (128540.25 - 128540) * 100 = 24.9999...).
+   * The balance string is guaranteed to be "^-?\d+\.\d{2}$" from the API.
+   */
+  private buildAriaLabelFromString(value: string): string {
+    const dotIndex = value.indexOf('.');
+    if (dotIndex === -1) {
+      // No decimal part — treat as whole baht
+      const baht = parseInt(value, 10);
+      return `${baht.toLocaleString('th-TH')} บาท`;
+    }
 
-    return satang > 0
-      ? `${bahtFormatted} บาท ${satang} สตางค์`
+    const bahtPart = parseInt(value.substring(0, dotIndex), 10);
+    const satangPart = parseInt(value.substring(dotIndex + 1).padEnd(2, '0').substring(0, 2), 10);
+    const bahtFormatted = bahtPart.toLocaleString('th-TH');
+
+    return satangPart > 0
+      ? `${bahtFormatted} บาท ${satangPart} สตางค์`
       : `${bahtFormatted} บาท`;
   }
 }

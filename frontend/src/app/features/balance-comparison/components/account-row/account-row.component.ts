@@ -22,6 +22,7 @@ import {
   EventEmitter,
   ChangeDetectionStrategy,
   OnChanges,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AccountViewDto } from '../../models/balance-dashboard.model';
@@ -41,10 +42,17 @@ import { StaleBadgeComponent } from '../stale-badge/stale-badge.component';
     BalanceAmountPipe,
     StaleBadgeComponent,
   ],
+  // R-FE-007: pipes are provided here so Angular DI can inject them.
+  // This avoids `new AccountTypeLabelPipe()` / `new BalanceAmountPipe()` in component code.
+  providers: [AccountTypeLabelPipe, BalanceAmountPipe],
   templateUrl: './account-row.component.html',
   styleUrls: ['./account-row.component.scss'],
 })
 export class AccountRowComponent implements OnChanges {
+  // R-FE-007: inject pipes via DI instead of instantiating with `new` in buildAriaLabel()
+  private readonly typeLabelPipe = inject(AccountTypeLabelPipe);
+  private readonly amountPipe = inject(BalanceAmountPipe);
+
   @Input({ required: true }) account!: AccountViewDto;
   /** Total account count for "Account N of M" SR template. */
   @Input({ required: true }) totalCount!: number;
@@ -64,12 +72,10 @@ export class AccountRowComponent implements OnChanges {
   private buildAriaLabel(): string {
     if (!this.account) return '';
 
-    const typeLabelPipe = new AccountTypeLabelPipe();
-    const amountPipe = new BalanceAmountPipe();
-
-    const typeLabel = typeLabelPipe.transform(this.account.accountType, 'th');
+    // R-FE-007: use injected pipe instances (not `new` — which bypasses DI and recreates Intl.NumberFormat each time)
+    const typeLabel = this.typeLabelPipe.transform(this.account.accountType, 'th');
     const last4 = this.account.accountNumberMasked.slice(-4);
-    const balanceResult = amountPipe.transform(this.account.balance);
+    const balanceResult = this.amountPipe.transform(this.account.balance);
     const timeLabel = this.buildRelativeTime(this.account.balanceAsOf);
     const staleClause = this.account.isStale ? ', อาจไม่ใช่ยอดล่าสุด' : '';
 

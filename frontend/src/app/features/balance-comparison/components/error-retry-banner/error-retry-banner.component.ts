@@ -71,4 +71,13 @@ export class ErrorRetryBannerComponent implements AfterViewInit {
   onRetry(): void {
     this.retry.emit();
   }
+
+  /**
+   * R-FE-002: Angular event binding replaces inline onerror handler (CSP violation fix).
+   * Called when the error illustration image fails to load.
+   * Hides the broken image; the fallback SVG is always visible alongside it.
+   */
+  onImgError(event: Event): void {
+    (event.target as HTMLImageElement).style.display = 'none';
+  }
 }

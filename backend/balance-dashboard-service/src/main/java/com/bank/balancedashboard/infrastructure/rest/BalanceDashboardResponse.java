@@ -64,7 +64,8 @@ public class BalanceDashboardResponse {
         private final String accountType;
 
         // CRITICAL: balance MUST be serialized as JSON string, not number (IEEE-754 prevention)
-        @JsonSerialize(using = ToStringSerializer.class)
+        // @JsonSerialize is on the getter (not the private field) to ensure it is honored
+        // regardless of Jackson field-visibility configuration. See R-BE-007.
         private final BigDecimal balance;
 
         private final String currency;
@@ -104,6 +105,13 @@ public class BalanceDashboardResponse {
         public UUID getAccountId() { return accountId; }
         public String getAccountNumberMasked() { return accountNumberMasked; }
         public String getAccountType() { return accountType; }
+
+        /**
+         * Returns balance as a string in JSON (IEEE-754 prevention).
+         * @JsonSerialize is on the getter to ensure annotation is honored regardless of
+         * Jackson field-visibility settings (R-BE-007 fix).
+         */
+        @JsonSerialize(using = ToStringSerializer.class)
         public BigDecimal getBalance() { return balance; }
         public String getCurrency() { return currency; }
         public Instant getBalanceAsOf() { return balanceAsOf; }

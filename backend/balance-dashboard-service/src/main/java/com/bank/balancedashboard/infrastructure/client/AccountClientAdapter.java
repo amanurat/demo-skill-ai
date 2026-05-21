@@ -3,6 +3,7 @@ package com.bank.balancedashboard.infrastructure.client;
 import com.bank.account.client.AccountClientLib;
 import com.bank.account.client.AccountInfo;
 import com.bank.balancedashboard.application.port.out.AccountPort;
+import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import com.bank.balancedashboard.domain.model.AccountType;
 import com.bank.balancedashboard.domain.model.AccountView;
 import com.bank.balancedashboard.domain.policy.EligibilityPolicy;
@@ -106,26 +107,22 @@ public class AccountClientAdapter implements AccountPort {
 
         } catch (TimeoutException e) {
             log.warn("account-client timeout customerId={}", customerId, e);
-            throw new UpstreamUnavailableException(
-                    "account-service timed out", "TIMEOUT", e);
+            throw new DashboardUnavailableException("account-service timed out", e);
         } catch (CallNotPermittedException e) {
             log.warn("account-client circuit-breaker OPEN customerId={}", customerId, e);
-            throw new UpstreamUnavailableException(
-                    "account-service circuit breaker is open", "CB_OPEN", e);
+            throw new DashboardUnavailableException("account-service circuit breaker is open", e);
         } catch (BulkheadFullException e) {
             log.warn("account-client bulkhead full customerId={}", customerId, e);
-            throw new UpstreamUnavailableException(
-                    "account-service bulkhead full", "BULKHEAD_FULL", e);
+            throw new DashboardUnavailableException("account-service bulkhead full", e);
         } catch (UpstreamUnavailableException e) {
-            throw e; // already wrapped
+            // Wrap infra exception into domain exception before propagating
+            throw new DashboardUnavailableException("Account service unavailable", e);
         } catch (RuntimeException e) {
             log.warn("account-client unexpected error customerId={}", customerId, e);
-            throw new UpstreamUnavailableException(
-                    "account-service unavailable", "UPSTREAM_ERROR", e);
+            throw new DashboardUnavailableException("account-service unavailable", e);
         } catch (Exception e) {
             log.warn("account-client checked exception customerId={}", customerId, e);
-            throw new UpstreamUnavailableException(
-                    "account-service unavailable", "UPSTREAM_ERROR", e);
+            throw new DashboardUnavailableException("account-service unavailable", e);
         }
     }
 

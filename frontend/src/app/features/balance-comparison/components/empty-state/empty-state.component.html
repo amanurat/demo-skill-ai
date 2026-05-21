@@ -17,7 +17,7 @@
       class="empty-state__illustration-img"
       width="120"
       height="120"
-      onerror="this.style.display='none'"
+      (error)="onImgError($event)"
     />
     <!-- Fallback SVG when image not found (inline placeholder) -->
     <svg

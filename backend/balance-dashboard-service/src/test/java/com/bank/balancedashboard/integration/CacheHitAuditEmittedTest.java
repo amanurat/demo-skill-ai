@@ -16,7 +16,14 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -33,17 +40,37 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Integration test for BR-014: audit emitted regardless of cache state (AC-001-H3, AC-003-H3).
  *
- * <p>Tests:
- * (1) Warm-cache request -> response from Redis -> audit STILL emitted with cacheHit=true
- * (2) Second request -> same result; AccountPort called only once across two requests
+ * <p>R-BE-009/010 fix: wired with real Testcontainers Redis and Kafka so that
+ * the cache-hit path and audit emission are verified against real infra, not mocks.
  *
- * <p>Note: Uses embedded/mocked Redis via MockBean on CachePort (not Testcontainers in this mock variant).
- * For full Testcontainers Redis test, see UpstreamFailureReturns503Test which tests the full stack.
+ * <p>Tests:
+ * (1) Warm-cache request -> response from Redis -> audit STILL emitted with cacheHit=true (BR-014)
+ * (2) Empty accounts -> audit emitted with accountCount=0 (AC-001-E1)
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @ActiveProfiles("integration")
+@Testcontainers
 class CacheHitAuditEmittedTest {
+
+    @Container
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> redis =
+            new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+                    .withExposedPorts(6379);
+
+    @Container
+    @SuppressWarnings("resource")
+    static final ConfluentKafkaContainer kafka =
+            new ConfluentKafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+        registry.add("spring.data.redis.ssl.enabled", () -> "false"); // Testcontainers Redis has no TLS surface
+        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -56,10 +83,6 @@ class CacheHitAuditEmittedTest {
 
     @MockBean
     private JwtDecoder jwtDecoder;
-
-    // We use the real RedisCacheRepository is too complex to wire without Testcontainers.
-    // This integration test validates audit behavior via mocked CachePort that simulates a warm cache.
-    // The actual Redis integration is covered by UpstreamFailureReturns503Test.
 
     private static final UUID CUSTOMER_ID = UUID.fromString("11111111-2222-3333-4444-555555555555");
 

@@ -33,4 +33,13 @@ export class EmptyStateComponent implements AfterViewInit {
       this.headingRef.nativeElement.focus();
     }
   }
+
+  /**
+   * R-FE-001: Angular event binding replaces inline onerror handler (CSP violation fix).
+   * Called when the illustration image fails to load (e.g., asset not found).
+   * Hides the broken image; the fallback SVG is always visible alongside it.
+   */
+  onImgError(event: Event): void {
+    (event.target as HTMLImageElement).style.display = 'none';
+  }
 }

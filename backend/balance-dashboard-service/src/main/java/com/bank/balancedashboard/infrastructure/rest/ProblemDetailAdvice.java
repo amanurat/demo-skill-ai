@@ -1,6 +1,6 @@
 package com.bank.balancedashboard.infrastructure.rest;
 
-import com.bank.balancedashboard.infrastructure.client.UpstreamUnavailableException;
+import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -31,14 +30,14 @@ public class ProblemDetailAdvice {
     private static final String PROBLEM_JSON = "application/problem+json";
 
     /**
-     * Maps UpstreamUnavailableException → HTTP 503 with Retry-After: 5.
+     * Maps DashboardUnavailableException → HTTP 503 with Retry-After: 1.
      * All Resilience4j failure modes (timeout, CB-open, bulkhead, 5xx after retries).
      */
-    @ExceptionHandler(UpstreamUnavailableException.class)
-    public ResponseEntity<Map<String, Object>> handleUpstreamUnavailable(
-            UpstreamUnavailableException e) {
+    @ExceptionHandler(DashboardUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleDashboardUnavailable(
+            DashboardUnavailableException e) {
         String correlationId = UUID.randomUUID().toString();
-        log.warn("upstream.unavailable correlationId={} reason={}", correlationId, e.reason(), e);
+        log.warn("upstream.unavailable correlationId={}", correlationId, e);
 
         Map<String, Object> problem = buildProblem(
                 "https://errors.bank.local/balance-dashboard/unavailable",
@@ -51,7 +50,7 @@ public class ProblemDetailAdvice {
 
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .contentType(MediaType.valueOf(PROBLEM_JSON))
-                .header("Retry-After", "5")
+                .header("Retry-After", "1")
                 .header("X-Correlation-Id", correlationId)
                 .body(problem);
     }
@@ -81,27 +80,28 @@ public class ProblemDetailAdvice {
     }
 
     /**
-     * Safe fallback for unexpected RuntimeExceptions.
+     * Safe fallback for unexpected RuntimeExceptions (programming errors, not upstream failures).
+     * Maps to HTTP 500 — FE MUST NOT auto-retry developer bugs.
+     * No Retry-After header.
      * No stack trace or internal detail is leaked per Security C-2.
      */
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleGenericRuntimeException(RuntimeException e) {
         String correlationId = UUID.randomUUID().toString();
-        // Log at ERROR for ops alerting
+        // Log at ERROR — ops alert should fire here (not WARN)
         log.error("internal.error correlationId={}", correlationId, e);
 
         Map<String, Object> problem = buildProblem(
-                "https://errors.bank.local/balance-dashboard/unavailable",
-                "ไม่สามารถโหลดข้อมูลได้ในขณะนี้",
-                503,
-                "กรุณาลองใหม่อีกครั้งในอีกสักครู่",
+                "https://errors.bank.local/balance-dashboard/internal-error",
+                "เกิดข้อผิดพลาดภายในระบบ",
+                500,
+                "กรุณาติดต่อทีมงานหากปัญหายังคงอยู่",
                 correlationId,
-                "SERVICE_UNAVAILABLE"
+                "INTERNAL_ERROR"
         );
 
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .contentType(MediaType.valueOf(PROBLEM_JSON))
-                .header("Retry-After", "1")
                 .header("X-Correlation-Id", correlationId)
                 .body(problem);
     }

@@ -33,11 +33,12 @@ spring:
     producer:
       acks: "1"
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # R-BE-012: use Apicurio AvroKafkaSerializer for schema-registry-enforced Avro (ADR-007 §2.4)
+      value-serializer: io.apicurio.registry.serde.avro.AvroKafkaSerializer
       properties:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
-        schema.registry.url: ${APICURIO_URL:http://localhost:8081}
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:${APICURIO_URL:http://localhost:8081}}
     security:
       protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
     properties:

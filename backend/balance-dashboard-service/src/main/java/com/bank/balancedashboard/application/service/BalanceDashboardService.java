@@ -8,8 +8,9 @@ import com.bank.balancedashboard.domain.audit.Channel;
 import com.bank.balancedashboard.domain.model.AccountView;
 import com.bank.balancedashboard.domain.model.RankedDashboard;
 import com.bank.balancedashboard.domain.policy.Ranker;
+import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import com.bank.balancedashboard.domain.port.in.LoadDashboardUseCase;
-import com.bank.balancedashboard.infrastructure.client.UpstreamUnavailableException;
+import io.opentelemetry.api.trace.Span;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,7 @@ import java.util.UUID;
  *   <li>Return RankedDashboard</li>
  * </ol>
  *
- * <p>Error path: upstream throws UpstreamUnavailableException
+ * <p>Error path: upstream throws DashboardUnavailableException
  * → audit ERROR → re-throw (controller maps to 503).
  *
  * <p>Redis fail-open: if CachePort.get() throws RuntimeException → log + treat as MISS.
@@ -66,12 +67,16 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
      *
      * @param customerId authenticated customer UUID (from JWT sub — C-3 compliant)
      * @return ranked dashboard with freshness and correlationId metadata
-     * @throws UpstreamUnavailableException if account-service unreachable after Resilience4j exhaustion
+     * @throws DashboardUnavailableException if account-service unreachable after Resilience4j exhaustion
      */
     @Override
     public RankedDashboard loadDashboard(UUID customerId) {
-        // Generate a correlation ID for this request (replaced by OTel trace ID at controller layer)
-        String correlationId = UUID.randomUUID().toString();
+        // R-BE-013: derive correlationId from OTel trace ID when a span is active;
+        // fall back to random UUID only when no OTel context is present (e.g., tests).
+        Span currentSpan = Span.current();
+        String correlationId = currentSpan.getSpanContext().isValid()
+                ? currentSpan.getSpanContext().getTraceId()
+                : UUID.randomUUID().toString();
         Channel channel = Channel.MOBILE_BANKING; // default for v1; controller can pass via context
 
         // Step 1: Check cache (fail-open: RedisCacheRepository catches RedisException internally)
@@ -122,14 +127,13 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
                     customerId, dashboard.accountCount());
             return dashboard;
 
-        } catch (UpstreamUnavailableException e) {
+        } catch (DashboardUnavailableException e) {
             // Error path: audit ERROR before re-throwing
             auditEventPublisher.publish(
                     AuditEventRecord.error(customerId, correlationId, channel)
             );
-            log.warn("balance-dashboard upstream=UNAVAILABLE customerId={} reason={}",
-                    customerId, e.reason(), e);
-            throw e; // controller maps to 503 Problem-Detail
+            log.warn("balance-dashboard upstream=UNAVAILABLE customerId={}", customerId, e);
+            throw e; // controller maps to 503 Problem-Detail via ProblemDetailAdvice
         }
     }
 

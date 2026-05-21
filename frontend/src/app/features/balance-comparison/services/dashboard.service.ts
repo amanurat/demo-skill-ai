@@ -12,7 +12,7 @@
 
 import { Injectable, inject } from '@angular/core';
 import { Observable, throwError, timer, of } from 'rxjs';
-import { catchError, map, mergeMap, retryWhen } from 'rxjs/operators';
+import { catchError, map, retry } from 'rxjs/operators';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BalanceDashboardApiService } from '../api/balance-dashboard-api.service';
 import {
@@ -33,17 +33,19 @@ export class DashboardService {
    */
   loadDashboard(): Observable<DashboardState> {
     return this.api.getDashboard().pipe(
-      // Apply 503-only exponential retry BEFORE mapping
-      retryWhen((errors) =>
-        errors.pipe(
-          mergeMap((err: HttpErrorResponse, attempt) => {
-            if (err.status !== 503 || attempt >= 3) {
-              return throwError(() => err);
-            }
-            return timer(RETRY_DELAYS_MS[attempt] ?? 4000);
-          })
-        )
-      ),
+      // R-FE-005: migrated from deprecated retryWhen to retry() (RxJS 7+).
+      // Only retries on 503 (upstream unavailable) — never on 401/403 (auth errors).
+      // Exponential backoff: 1s / 2s / 4s, max 3 attempts.
+      retry({
+        count: 3,
+        delay: (error: HttpErrorResponse, retryCount: number) => {
+          if (error.status !== 503) {
+            // Do not retry auth/forbidden/other errors
+            return throwError(() => error);
+          }
+          return timer(RETRY_DELAYS_MS[retryCount - 1] ?? 4000);
+        },
+      }),
       map((response: BalanceDashboardResponse): DashboardState => {
         if (response.accounts.length === 0) {
           return { kind: 'empty', meta: response.meta };

@@ -70,7 +70,8 @@
         [attr.aria-label]="balanceResult.ariaLabel"
         data-testid="balance-amount"
       >
-        <span aria-hidden="true">฿</span>{{ balanceResult.display.replace('฿', '').replace('THB', '').trim() }}
+        {{/* R-FE-006: formatting comes entirely from BalanceAmountPipe (no template .replace() chains) */}}
+        <span aria-hidden="true">฿</span>{{ balanceResult.amountOnly }}
       </span>
       <span
         class="account-row__currency"

@@ -1,6 +1,7 @@
 package com.bank.balancedashboard.domain.audit;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,17 @@ public record AuditEventRecord(
         Boolean cacheHit,      // true if served from Redis; null for non-SUCCESS paths
         Integer accountCount   // aggregate count; 0 for empty/FORBIDDEN/ERROR
 ) {
+    /**
+     * Compact constructor — validates mandatory invariants.
+     * Fail-fast at record creation (R-BE-014): actorId and correlationId MUST be non-null.
+     * The "unknown" fallback in KafkaAuditEventPublisher should never be reached.
+     */
+    public AuditEventRecord {
+        Objects.requireNonNull(actorId, "actorId must not be null");
+        if (correlationId == null || correlationId.isBlank()) {
+            throw new IllegalArgumentException("correlationId must not be null or blank");
+        }
+    }
 
     /**
      * Factory: successful balance inquiry (cache HIT or MISS).
@@ -80,7 +92,7 @@ public record AuditEventRecord(
 
     /**
      * Factory: upstream failure (CB-open, timeout, retries exhausted, HTTP 5xx).
-     * ADR-007 §2.5 call site 3 — emitted before re-throwing UpstreamUnavailableException.
+     * ADR-007 §2.5 call site 3 — emitted before re-throwing DashboardUnavailableException.
      */
     public static AuditEventRecord error(UUID actorId,
                                          String correlationId,

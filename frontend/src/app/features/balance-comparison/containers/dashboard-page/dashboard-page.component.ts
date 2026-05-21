@@ -160,9 +160,9 @@ export class DashboardPageComponent implements OnInit, OnDestroy {
     this.staleBannerDismissed.set(true);
   }
 
-  onRowSelect(account: AccountViewDto): void {
-    // Out-of-scope in v1 — account detail route deferred
-    // eslint-disable-next-line no-console
-    console.log('[balance-dashboard] row selected:', account.rank);
+  onRowSelect(_account: AccountViewDto): void {
+    // R-FE-008: removed console.log (production code must not log to console).
+    // Account detail navigation is deferred to v1.1 — see task-plan §v1.1 backlog.
+    // TODO: v1.1 — navigate to account detail route when implemented.
   }
 }

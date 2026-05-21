@@ -32,7 +32,7 @@ public interface LoadDashboardUseCase {
      *
      * @param customerId authenticated customer UUID (from JWT sub — validated by CustomerIdResolver)
      * @return ranked dashboard (may have empty accounts list — AC-001-E1)
-     * @throws com.bank.balancedashboard.infrastructure.client.UpstreamUnavailableException
+     * @throws com.bank.balancedashboard.domain.exception.DashboardUnavailableException
      *         if account-service is unavailable after Resilience4j exhaustion
      */
     RankedDashboard loadDashboard(UUID customerId);

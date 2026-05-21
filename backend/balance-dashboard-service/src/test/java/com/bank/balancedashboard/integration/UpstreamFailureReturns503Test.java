@@ -4,7 +4,7 @@ import com.bank.balancedashboard.application.port.out.AccountPort;
 import com.bank.balancedashboard.application.port.out.AuditEventPublisher;
 import com.bank.balancedashboard.domain.audit.AuditEventRecord;
 import com.bank.balancedashboard.domain.audit.Result;
-import com.bank.balancedashboard.infrastructure.client.UpstreamUnavailableException;
+import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -15,7 +15,14 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import java.util.UUID;
 
@@ -30,14 +37,39 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Integration test: upstream failure -> 503 Problem-Detail + audit ERROR emitted.
  * AC-003-E1 (partially), impl-notes §3 failure mode contract.
  *
+ * <p>R-BE-009/010 fix: wired with real Testcontainers Redis and Kafka so that
+ * the full application context (including cache fail-open) is exercised.
+ *
  * <p>Tests:
  * (1) CB-OPEN scenario -> 503 + Problem-Detail + Retry-After + audit ERROR
  * (2) Timeout scenario -> 503 + SERVICE_UNAVAILABLE code
+ * (3) No JWT -> 401
+ * (4) Wrong scope -> 403
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @ActiveProfiles("integration")
+@Testcontainers
 class UpstreamFailureReturns503Test {
+
+    @Container
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> redis =
+            new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
+                    .withExposedPorts(6379);
+
+    @Container
+    @SuppressWarnings("resource")
+    static final ConfluentKafkaContainer kafka =
+            new ConfluentKafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", redis::getHost);
+        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
+        registry.add("spring.data.redis.ssl.enabled", () -> "false"); // Testcontainers Redis has no TLS surface
+        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -54,11 +86,11 @@ class UpstreamFailureReturns503Test {
     private static final UUID CUSTOMER_ID = UUID.fromString("11111111-2222-3333-4444-555555555555");
 
     @Test
-    @DisplayName("(1) CB-OPEN (UpstreamUnavailableException) -> 503 + Problem-Detail + audit ERROR")
+    @DisplayName("(1) CB-OPEN (DashboardUnavailableException) -> 503 + Problem-Detail + audit ERROR")
     void circuitBreakerOpen_returns503_andEmitsAuditError() throws Exception {
-        // Given: AccountPort throws UpstreamUnavailableException (simulates CB-open)
+        // Given: AccountPort throws DashboardUnavailableException (domain exception, simulates CB-open)
         when(accountPort.fetchAccounts(any()))
-                .thenThrow(new UpstreamUnavailableException("CB open", "CB_OPEN"));
+                .thenThrow(new DashboardUnavailableException("CB open"));
         doNothing().when(auditEventPublisher).publish(any());
 
         // When
@@ -88,9 +120,9 @@ class UpstreamFailureReturns503Test {
     @Test
     @DisplayName("(2) Timeout -> 503 + SERVICE_UNAVAILABLE code")
     void timeout_returns503_withServiceUnavailableCode() throws Exception {
-        // Given: Timeout exception wrapped as UpstreamUnavailableException
+        // Given: Timeout exception wrapped as DashboardUnavailableException (domain exception)
         when(accountPort.fetchAccounts(any()))
-                .thenThrow(new UpstreamUnavailableException("timeout", "TIMEOUT"));
+                .thenThrow(new DashboardUnavailableException("timeout"));
         doNothing().when(auditEventPublisher).publish(any());
 
         mockMvc.perform(get("/api/v1/balance-dashboard")

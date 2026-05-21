@@ -2,12 +2,14 @@
 balance-dashboard:
   enabled: true
 
-# Staging: SSL may be disabled on local Redis (ASSUMPTION-TL-004 to verify at D5)
+# Staging: Redis SSL MUST be enabled (Security C-4). If staging cluster lacks TLS,
+# escalate to DevOps per ASSUMPTION-TL-004 and gate the staging deploy on cluster TLS
+# being enabled. Do NOT disable TLS in source code.
 spring:
   data:
     redis:
       ssl:
-        enabled: false   # Override: staging Redis cluster may not have TLS; DevOps to verify C-4
+        enabled: true    # Security C-4 — TLS required in all non-local environments
       host: ${REDIS_HOST:redis-staging.bank.local}
       port: ${REDIS_PORT:6379}
 
