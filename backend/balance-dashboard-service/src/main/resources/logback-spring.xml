@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  logback-spring.xml — Defense-in-depth PII masking for balance-dashboard-service
+  ============================================================================
+  Security Finding F-2 fix (CWE-532, OWASP A09:2021, PDPA §22).
+
+  PURPOSE: Secondary safety-net masking layer. The PRIMARY masking control is
+  LogMasking.maskId() / LogMasking.maskKey() used at every log call site (F-1 fix).
+  This file is defense-in-depth — it catches any UUID or digit sequence that
+  slips through the call-site masking, preventing PII from reaching log sinks.
+
+  TODO: When the observability-lib ships its reusable MaskingConverter, replace
+  the ReplacingCompositeConverter references below with:
+      <conversionRule conversion="maskedMsg"
+                      converterClass="com.bank.observability.logback.MaskingConverter"/>
+  Tracked in: https://jira.bank.local/observability/OBS-042 (masking-filter library)
+
+  PROFILES:
+    - dev       : Human-readable console (ANSI colors optional)
+    - staging   : JSON (structured) — shipped to ELK/Loki
+    - prod      : JSON (structured) — shipped to ELK/Loki (same encoder, stricter level)
+-->
+<configuration>
+
+    <!-- ================================================================
+         Masking replacements — applied via <replace> in the pattern.
+         1. UUID pattern  : 550e8400-e29b-41d4-a716-446655440000 → xxxxxxxx-****
+         2. Digit sequence: 10-16 consecutive digits (PAN / account number) → ****<last-4>
+    ================================================================ -->
+
+    <!--
+      APPROACH: Use Logback's built-in <replace> tag inside the pattern encoder.
+      This avoids a custom Converter class dependency while still providing a
+      regex-based safety net for unmasked PII that slips through call-site masking.
+
+      Regex 1 — Full UUID:
+        [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+        → xxxxxxxx-****
+
+      Regex 2 — Long digit sequences (PAN / account number, 10–16 digits):
+        \b\d{10,16}\b
+        → ****<last 4 via backreference not supported in logback replace>
+        → ****-REDACTED  (conservative: mask entire sequence)
+
+      NOTE: logback <replace> does not support backreferences, so digit sequences
+      are fully replaced. If last-4 exposure is required in dev, extend with a
+      custom PatternConverter (see TODO above).
+    -->
+
+    <!-- ================================================================
+         DEV profile — human-readable console output with masking
+    ================================================================ -->
+    <springProfile name="dev,default">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -
+                    %replace(
+                        %replace(%msg){
+                            '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                            'xxxxxxxx-****'
+                        }
+                    ){'\b\d{10,16}\b','****-REDACTED'}%n%ex</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+        <logger name="com.bank.balancedashboard" level="DEBUG" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="org.springframework.security" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+        <logger name="io.lettuce" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+        </logger>
+    </springProfile>
+
+    <!-- ================================================================
+         STAGING profile — JSON structured logging (ship to ELK/Loki)
+         Fields: timestamp, level, logger, thread, traceId, spanId, message
+    ================================================================ -->
+    <springProfile name="staging">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!-- Mask UUID patterns in the message field before shipping -->
+                <messagePatternLayoutEncoder>
+                    <pattern>%replace(
+                        %replace(%msg){
+                            '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                            'xxxxxxxx-****'
+                        }
+                    ){'\b\d{10,16}\b','****-REDACTED'}</pattern>
+                </messagePatternLayoutEncoder>
+                <!-- Include OTel trace/span IDs for correlation in Tempo/Jaeger -->
+                <provider class="net.logstash.logback.composite.loggingevent.LoggingEventPatternJsonProvider">
+                    <pattern>{"traceId": "%X{traceId}", "spanId": "%X{spanId}"}</pattern>
+                </provider>
+                <!-- Standard fields -->
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <message>message</message>
+                    <logger>logger</logger>
+                    <thread>thread</thread>
+                    <level>level</level>
+                </fieldNames>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+        <logger name="com.bank.balancedashboard" level="DEBUG" additivity="false">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </logger>
+        <logger name="org.springframework.security" level="WARN" additivity="false">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </logger>
+        <logger name="io.lettuce" level="WARN" additivity="false">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </logger>
+    </springProfile>
+
+    <!-- ================================================================
+         PROD profile — JSON structured logging, INFO+ only
+         Same encoder as staging — stricter level gate at root.
+    ================================================================ -->
+    <springProfile name="prod">
+        <appender name="JSON_CONSOLE_PROD" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <messagePatternLayoutEncoder>
+                    <pattern>%replace(
+                        %replace(%msg){
+                            '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                            'xxxxxxxx-****'
+                        }
+                    ){'\b\d{10,16}\b','****-REDACTED'}</pattern>
+                </messagePatternLayoutEncoder>
+                <provider class="net.logstash.logback.composite.loggingevent.LoggingEventPatternJsonProvider">
+                    <pattern>{"traceId": "%X{traceId}", "spanId": "%X{spanId}"}</pattern>
+                </provider>
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <message>message</message>
+                    <logger>logger</logger>
+                    <thread>thread</thread>
+                    <level>level</level>
+                </fieldNames>
+            </encoder>
+        </appender>
+
+        <!-- PROD: INFO and above only — no DEBUG leakage in production logs -->
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE_PROD"/>
+        </root>
+        <logger name="com.bank.balancedashboard" level="INFO" additivity="false">
+            <appender-ref ref="JSON_CONSOLE_PROD"/>
+        </logger>
+        <logger name="org.springframework.security" level="WARN" additivity="false">
+            <appender-ref ref="JSON_CONSOLE_PROD"/>
+        </logger>
+        <logger name="io.lettuce" level="WARN" additivity="false">
+            <appender-ref ref="JSON_CONSOLE_PROD"/>
+        </logger>
+    </springProfile>
+
+</configuration>

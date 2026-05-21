@@ -10,6 +10,7 @@ import com.bank.balancedashboard.domain.model.RankedDashboard;
 import com.bank.balancedashboard.domain.policy.Ranker;
 import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import com.bank.balancedashboard.domain.port.in.LoadDashboardUseCase;
+import com.bank.balancedashboard.infrastructure.rest.LogMasking;
 import io.opentelemetry.api.trace.Span;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,7 +103,7 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
             );
 
             log.debug("balance-dashboard cache=HIT customerId={} accountCount={}",
-                    customerId, withUpdatedMeta.accountCount());
+                    LogMasking.maskId(customerId), withUpdatedMeta.accountCount());
             return withUpdatedMeta;
         }
 
@@ -127,7 +128,7 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
             );
 
             log.debug("balance-dashboard cache=MISS customerId={} accountCount={}",
-                    customerId, dashboard.accountCount());
+                    LogMasking.maskId(customerId), dashboard.accountCount());
             return dashboard;
 
         } catch (DashboardUnavailableException e) {
@@ -135,7 +136,7 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
             auditEventPublisher.publish(
                     AuditEventRecord.error(customerId, correlationId, channel)
             );
-            log.warn("balance-dashboard upstream=UNAVAILABLE customerId={}", customerId, e);
+            log.warn("balance-dashboard upstream=UNAVAILABLE customerId={}", LogMasking.maskId(customerId), e);
             throw e; // controller maps to 503 Problem-Detail via ProblemDetailAdvice
         }
     }
@@ -151,7 +152,7 @@ public class BalanceDashboardService implements LoadDashboardUseCase {
         } catch (RuntimeException e) {
             // Redis fail-open (test case 5: redisFailure_failOpen_fetchesAccountClient_emitsAudit)
             log.warn("balance-dashboard cache.get.unexpected-error customerId={} — failing open",
-                    customerId, e);
+                    LogMasking.maskId(customerId), e);
             return Optional.empty();
         }
     }

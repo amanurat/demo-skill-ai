@@ -73,7 +73,7 @@ public class BalanceDashboardController {
         BalanceDashboardResponse response = BalanceDashboardResponse.from(dashboard);
 
         log.debug("balance-dashboard.response customerId={} freshness={} accountCount={}",
-                customerId, dashboard.freshness(), dashboard.accountCount());
+                LogMasking.maskId(customerId), dashboard.freshness(), dashboard.accountCount());
 
         return ResponseEntity.ok()
                 // X-Cache: HIT or MISS (observability)

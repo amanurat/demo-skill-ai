@@ -7,6 +7,7 @@ import com.bank.balancedashboard.domain.exception.DashboardUnavailableException;
 import com.bank.balancedashboard.domain.model.AccountType;
 import com.bank.balancedashboard.domain.model.AccountView;
 import com.bank.balancedashboard.domain.policy.EligibilityPolicy;
+import com.bank.balancedashboard.infrastructure.rest.LogMasking;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
@@ -106,22 +107,22 @@ public class AccountClientAdapter implements AccountPort {
             return mapAndFilter(rawAccounts);
 
         } catch (TimeoutException e) {
-            log.warn("account-client timeout customerId={}", customerId, e);
+            log.warn("account-client timeout customerId={}", LogMasking.maskId(customerId), e);
             throw new DashboardUnavailableException("account-service timed out", e);
         } catch (CallNotPermittedException e) {
-            log.warn("account-client circuit-breaker OPEN customerId={}", customerId, e);
+            log.warn("account-client circuit-breaker OPEN customerId={}", LogMasking.maskId(customerId), e);
             throw new DashboardUnavailableException("account-service circuit breaker is open", e);
         } catch (BulkheadFullException e) {
-            log.warn("account-client bulkhead full customerId={}", customerId, e);
+            log.warn("account-client bulkhead full customerId={}", LogMasking.maskId(customerId), e);
             throw new DashboardUnavailableException("account-service bulkhead full", e);
         } catch (UpstreamUnavailableException e) {
             // Wrap infra exception into domain exception before propagating
             throw new DashboardUnavailableException("Account service unavailable", e);
         } catch (RuntimeException e) {
-            log.warn("account-client unexpected error customerId={}", customerId, e);
+            log.warn("account-client unexpected error customerId={}", LogMasking.maskId(customerId), e);
             throw new DashboardUnavailableException("account-service unavailable", e);
         } catch (Exception e) {
-            log.warn("account-client checked exception customerId={}", customerId, e);
+            log.warn("account-client checked exception customerId={}", LogMasking.maskId(customerId), e);
             throw new DashboardUnavailableException("account-service unavailable", e);
         }
     }
@@ -150,7 +151,7 @@ public class AccountClientAdapter implements AccountPort {
                             && now.getEpochSecond() - balanceAsOf.getEpochSecond() > STALE_THRESHOLD_SECONDS;
 
                     if (ai.getBalanceAsOf() == null) {
-                        log.warn("account.balanceAsOf.null accountId={}", ai.getAccountId());
+                        log.warn("account.balanceAsOf.null accountId={}", LogMasking.maskId(ai.getAccountId()));
                     }
 
                     return new AccountView(
@@ -175,7 +176,7 @@ public class AccountClientAdapter implements AccountPort {
         try {
             return Instant.parse(balanceAsOf);
         } catch (Exception e) {
-            log.warn("account.balanceAsOf.parse.failed accountId={} value={}", accountId, balanceAsOf, e);
+            log.warn("account.balanceAsOf.parse.failed accountId={} value={}", LogMasking.maskId(accountId), balanceAsOf, e);
             return null;
         }
     }

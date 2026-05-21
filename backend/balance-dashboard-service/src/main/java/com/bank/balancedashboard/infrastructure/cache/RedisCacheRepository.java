@@ -4,6 +4,7 @@ import com.bank.balancedashboard.application.port.out.CachePort;
 import com.bank.balancedashboard.domain.model.AccountType;
 import com.bank.balancedashboard.domain.model.AccountView;
 import com.bank.balancedashboard.domain.model.RankedDashboard;
+import com.bank.balancedashboard.infrastructure.rest.LogMasking;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -80,7 +81,7 @@ public class RedisCacheRepository implements CachePort {
             return Optional.of(dashboard);
         } catch (RuntimeException e) {
             // Redis fail-open (AC-003-E1, BR-015)
-            log.warn("cache.get.failed key={} — failing open to AccountClient", key, e);
+            log.warn("cache.get.failed key={} — failing open to AccountClient", LogMasking.maskKey(key), e);
             meterRegistry.counter("cache_miss_reason_total", "reason", "REDIS_UNAVAILABLE")
                     .increment();
             return Optional.empty();
@@ -104,11 +105,11 @@ public class RedisCacheRepository implements CachePort {
             // NEVER call .set(key, json) then .expire(key, duration) separately.
             redisTemplate.opsForValue().set(key, json, Duration.ofSeconds(ttlSeconds));
 
-            log.debug("cache.put key={} ttl={}s accountCount={}", key, ttlSeconds,
+            log.debug("cache.put key={} ttl={}s accountCount={}", LogMasking.maskKey(key), ttlSeconds,
                     dashboard.accountCount());
         } catch (RuntimeException e) {
             // Cache write failure — swallow (user still gets fresh response)
-            log.warn("cache.put.failed key={} — swallowing, user gets fresh response", key, e);
+            log.warn("cache.put.failed key={} — swallowing, user gets fresh response", LogMasking.maskKey(key), e);
             meterRegistry.counter("cache_miss_reason_total", "reason", "REDIS_WRITE_FAILED")
                     .increment();
         }

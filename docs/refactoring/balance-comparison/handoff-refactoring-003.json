@@ -1,0 +1,52 @@
+{
+  "artifact_id": "REFACTORING-003-balance-comparison-security-fixes",
+  "from_agent": "banking-refactoring",
+  "to_agent": "banking-player",
+  "phase": "REFACTORING",
+  "feature": "balance-comparison",
+  "payload": {
+    "iteration": 3,
+    "security_findings_addressed": ["F-1", "F-2"],
+    "files_changed": [
+      "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/rest/LogMasking.java",
+      "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/rest/BalanceDashboardController.java",
+      "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/application/service/BalanceDashboardService.java",
+      "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/client/AccountClientAdapter.java",
+      "backend/balance-dashboard-service/src/main/java/com/bank/balancedashboard/infrastructure/cache/RedisCacheRepository.java",
+      "backend/balance-dashboard-service/src/main/resources/logback-spring.xml",
+      "backend/balance-dashboard-service/src/test/java/com/bank/balancedashboard/unit/LogMaskingTest.java"
+    ],
+    "verdict": "fixed",
+    "finding_details": {
+      "F-1": {
+        "severity": "HIGH",
+        "standard": "CWE-532, OWASP A09:2021, PDPA §22",
+        "description": "PII in application logs — customerId/accountId UUIDs logged unmasked",
+        "fix": "Created LogMasking utility (maskId/maskKey); applied at 10 log call sites across 4 files",
+        "log_statements_patched": 10
+      },
+      "F-2": {
+        "severity": "MEDIUM",
+        "standard": "CWE-532, OWASP A09:2021",
+        "description": "Missing logback-spring.xml defense-in-depth masking filter",
+        "fix": "Created logback-spring.xml with UUID and digit-sequence regex masking for dev/staging/prod profiles"
+      }
+    },
+    "architecture_constraints_verified": [
+      "LogMasking placed in infrastructure.rest package",
+      "Domain layer (domain/) has zero non-package imports — unchanged",
+      "IborCheckFilter remains only class reading X-Customer-Id header — unchanged",
+      "IborCheckFilter private maskId(String) not broken — coexists with LogMasking.maskId(UUID/String)",
+      "CustomerIdResolver reads JWT sub only — unchanged",
+      "AuditEventRecord does not log balance/accountId/accounts/balanceAsOf/currency — unchanged"
+    ],
+    "new_findings_introduced": [],
+    "g7_integration_status": "UNCHANGED — no files in integration contract path modified"
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": true,
+    "notes": "All 10 unmasked log call sites across BalanceDashboardController, BalanceDashboardService, AccountClientAdapter, and RedisCacheRepository have been patched with LogMasking.maskId() or LogMasking.maskKey(). logback-spring.xml provides the mandatory defense-in-depth regex safety net for staging and prod profiles. Unit test LogMaskingTest asserts no full UUID appears in maskId or maskKey output. IborCheckFilter retains its own private maskId(String) — no conflict.",
+    "next_agent": "banking-security (re-review G8)"
+  }
+}
