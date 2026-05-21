@@ -1,0 +1,72 @@
+{
+  "artifact_id": "8e4d3c2a-1b9f-4a7e-b6c5-9f8e7d6c5b4a",
+  "from_agent": "banking-security",
+  "to_agent": "banking-player",
+  "phase": "SECURITY",
+  "feature": "balance-comparison",
+  "payload": {
+    "verdict": "changes_requested",
+    "sast_status": "findings",
+    "critical_cves": 0,
+    "secrets_in_code": false,
+    "pii_in_logs": true,
+    "stride_complete": true,
+    "findings": [
+      {
+        "id": "F-1",
+        "severity": "high",
+        "owasp_category": "A09:2021-Security-Logging-and-Monitoring-Failures",
+        "cwe": "CWE-532",
+        "files": [
+          "BalanceDashboardController.java:75-76",
+          "BalanceDashboardService.java:104-105,129-130,138",
+          "AccountClientAdapter.java:109,112,115,121,124,153,178",
+          "RedisCacheRepository.java:83,107,111"
+        ],
+        "description": "customerId/accountId UUIDs logged unmasked across 4 files at DEBUG/WARN — PDPA §22 violation.",
+        "remediation": "Extract IborCheckFilter.maskId() to shared LogMasking utility; replace all customerId={}/accountId={}/key={} log args; add regex masking unit test."
+      },
+      {
+        "id": "F-2",
+        "severity": "medium",
+        "owasp_category": "A09:2021-Security-Logging-and-Monitoring-Failures",
+        "cwe": "CWE-532",
+        "files": ["backend/balance-dashboard-service/src/main/resources/logback-spring.xml (missing)"],
+        "description": "No Logback masking filter present; defense-in-depth against future PII log additions absent.",
+        "remediation": "Create logback-spring.xml with regex pattern converter masking UUID + PAN-like digit sequences."
+      },
+      {
+        "id": "F-3",
+        "severity": "medium",
+        "blocking": false,
+        "owasp_category": "A07:2021-Identification-and-Authentication-Failures",
+        "cwe": "CWE-922",
+        "files": ["frontend/src/app/services/auth.service.ts:22-23,46-47"],
+        "description": "JWT in sessionStorage — XSS-recoverable. Improvement over localStorage but residual risk. No XSS sinks in feature.",
+        "remediation": "File backlog ticket BC-DEBT-002 for HttpOnly cookie + BFF migration in v1.1. Non-blocking for demo."
+      },
+      {
+        "id": "F-4",
+        "severity": "low",
+        "blocking": false,
+        "files": ["docs/security/balance-comparison/early-review-consent-coverage.md (C-1)"],
+        "description": "Privacy notice / consent UI deferred post-demo. Already tracked.",
+        "remediation": "No action required for G8."
+      },
+      {
+        "id": "F-5",
+        "severity": "info",
+        "blocking": false,
+        "description": "Future rate-limiting must be at ingress on JWT sub, NOT X-Forwarded-For at app layer.",
+        "remediation": "Document constraint in DevOps P1 NetworkPolicy spec."
+      }
+    ],
+    "report_path": "docs/security/balance-comparison/security-review-final.md"
+  },
+  "metadata": {
+    "version": "1.0",
+    "quality_gate_passed": false,
+    "notes": "F-1 (HIGH PII-in-logs) + F-2 (MEDIUM missing masking filter) block G8. Loop to banking-refactoring for targeted fixes. F-3/F-4/F-5 acceptable with backlog tickets. G7 (banking-integration) already approved.",
+    "next_agent": "banking-refactoring (security fixes)"
+  }
+}
